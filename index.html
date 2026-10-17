@@ -117,6 +117,50 @@
   .askrow{display:flex;gap:10px;margin-top:12px}
   .askrow input{flex:1}
   .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+
+  /* ---- 多选控件 ---- */
+  .multisel{position:relative;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+    min-width:150px;min-height:36px;padding:4px 6px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:8px}
+  .multisel:focus-within{border-color:var(--accent2)}
+  .ms-tags{display:flex;flex-wrap:wrap;gap:4px}
+  .ms-tag{display:inline-flex;align-items:center;gap:4px;background:rgba(88,166,255,.16);
+    border:1px solid var(--accent2);border-radius:6px;padding:1px 6px;font-size:12px;
+    color:var(--fg);white-space:nowrap}
+  .ms-tag b{cursor:pointer;font-weight:400;opacity:.7;font-size:13px;line-height:1}
+  .ms-tag b:hover{opacity:1;color:var(--err)}
+  .ms-empty{font-size:12px;color:var(--muted)}
+  .ms-toggle{background:transparent;border:0;color:var(--muted);cursor:pointer;
+    font-size:12px;padding:2px 4px;font-family:inherit}
+  .ms-toggle:hover{color:var(--fg)}
+  .ms-menu{position:absolute;top:calc(100% + 4px);left:0;z-index:60;
+    min-width:180px;max-height:260px;overflow-y:auto;background:var(--panel);
+    border:1px solid var(--line);border-radius:8px;padding:6px;
+    box-shadow:0 10px 28px rgba(0,0,0,.34)}
+  .ms-opt{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;
+    font-size:13px;cursor:pointer}
+  .ms-opt:hover{background:var(--panel2)}
+  .ms-opt input{accent-color:var(--accent);cursor:pointer}
+  .ms-opt.all{border-bottom:1px solid var(--line);margin-bottom:4px;padding-bottom:7px}
+
+  /* 右下角浮动导航：页面很长（几十屏），必须常驻才点得到 */
+  .fab{position:fixed;right:20px;bottom:24px;display:flex;flex-direction:column;
+    gap:8px;z-index:50}
+  .fab-btn{
+    width:52px;height:52px;border-radius:50%;border:1px solid var(--line);
+    background:var(--panel);color:var(--fg);font-size:13px;font-weight:600;
+    cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.28);
+    display:flex;align-items:center;justify-content:center;
+    transition:transform .12s,box-shadow .15s,opacity .15s;
+  }
+  .fab-btn:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.34)}
+  .fab-btn:active{transform:translateY(0)}
+  .fab-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;
+    font-size:14px}
+  @media(max-width:600px){
+    .fab{right:12px;bottom:16px}
+    .fab-btn{width:46px;height:46px;font-size:12px}
+  }
   .msg.bot strong{color:var(--accent2)}
   .msg.bot code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12.5px}
   .msg.bot pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;
@@ -182,7 +226,14 @@
     <div class="row">
       <div class="field" style="flex:1"><label>实时搜索（职位 / 公司 / 技能 / 标签）</label>
         <input id="kw" placeholder="例如：Python、算法、外企…"></div>
-      <div class="field"><label>城市</label><select id="fCity"><option value="">全部</option></select></div>
+      <div class="field"><label>城市（可多选）</label>
+        <div class="multisel" id="fCityBox" data-for="fCity">
+          <select id="fCity" multiple hidden><option value="">全部</option></select>
+          <div class="ms-tags" id="fCityTags"></div>
+          <button type="button" class="ms-toggle" id="fCityToggle">选择…</button>
+          <div class="ms-menu hide" id="fCityMenu"></div>
+        </div>
+      </div>
       <div class="field"><label>最低月薪(K)</label><input id="fSal" type="number" placeholder="不限" style="width:110px"></div>
       <div class="field"><label>经验</label><select id="fExp"><option value="">全部</option></select></div>
       <div class="field"><label>学历</label><select id="fDeg"><option value="">全部</option></select></div>
@@ -235,6 +286,12 @@
     </div>
     <p class="note" id="aiNote"></p>
   </div>
+</div>
+
+<!-- 浮动导航：始终固定右下角，滚到哪都能点 -->
+<div class="fab">
+  <button id="btnGoTop" class="fab-btn" title="回到顶部">↑</button>
+  <button id="btnGoAI" class="fab-btn primary" title="跳到 AI 问答">↓ AI</button>
 </div>
 
 <script>
@@ -300,6 +357,11 @@ function savePrefs(){
   try{
     const data = {};
     PERSIST_FIELDS.forEach(id=>{
+      if(id === "fCity"){
+        // 多选：存数组，刷新后逐个恢复
+        data[id] = getCities();
+        return;
+      }
       const el = $(id);
       if(el) data[id] = el.value;
     });
@@ -310,8 +372,10 @@ function savePrefs(){
 
 function applyPrefs(){
   const data = loadPrefs();
-  const DYN_SELECTS = ["fCity","fExp","fDeg"];   // 选项由数据生成，需延后套用
+  const DYN_SELECTS = ["fExp","fDeg"];   // 选项由数据生成，需延后套用
+  PENDING_CITIES = Array.isArray(data.fCity) ? data.fCity : [];
   PERSIST_FIELDS.forEach(id=>{
+    if(id === "fCity") return;
     const el = $(id);
     if(!el || typeof data[id] !== "string") return;
     if(DYN_SELECTS.includes(id)){
@@ -412,14 +476,45 @@ async function loadFile(name){
   render();
 }
 
+/* ---------- 城市多选 ---------- */
+// 选中值存在隐藏的 #fCity（multiple），便于沿用既有的持久化与选项生成逻辑
+function getCities(){
+  const sel = $("fCity");
+  return [...sel.selectedOptions].map(o=>o.value).filter(Boolean);
+}
+function setCities(list){
+  const sel = $("fCity");
+  const set = new Set(list);
+  [...sel.options].forEach(o=>{ o.selected = o.value !== "" && set.has(o.value); });
+  syncCityTags();
+}
+function renderCityMenu(cities, keep){
+  const menu = $("fCityMenu");
+  menu.innerHTML =
+    `<label class="ms-opt all"><input type="checkbox" data-city="" ${keep.length?"":"checked"}>全部</label>` +
+    cities.map(c=>`<label class="ms-opt"><input type="checkbox" data-city="${esc(c)}" ${keep.includes(c)?"checked":""}>${esc(c)}</label>`).join("");
+}
+function syncCityTags(){
+  const box = $("fCityTags"), list = getCities();
+  box.innerHTML = list.length
+    ? list.map(c=>`<span class="ms-tag">${esc(c)}<b data-rm="${esc(c)}" title="移除">×</b></span>`).join("")
+    : `<span class="ms-empty">全部</span>`;
+  // 隐藏 select 存一份逗号串，供持久化使用
+  $("fCity").dataset.value = list.join(",");
+}
+
 /* ---------- 筛选 + 渲染 ---------- */
 function currentFilter(){
   const q = $("kw").value.trim().toLowerCase();
-  const city = $("fCity").value, sal = parseFloat($("fSal").value), exp = $("fExp").value;
+  const cities = getCities();
+  const sal = parseFloat($("fSal").value), exp = $("fExp").value;
   const deg = $("fDeg").value;
   const onlyNew = $("fNew").value === "1";
   let rows = ALL.filter(j=>{
-    if(city && !(j.location||"").includes(city)) return false;
+    if(cities.length){
+      const c = String(j.location||"").split("·")[0].trim();
+      if(!cities.includes(c)) return false;
+    }
     if(!isNaN(sal)){ const s = salaryMin(j.salary); if(s===null || s<sal) return false; }
     if(exp && expOf(j.tags) !== exp) return false;
     if(deg && degreeOf(j.tags) !== deg) return false;
@@ -463,9 +558,9 @@ function render(){
 
   // 列表
   $("count").textContent = `（${rows.length} / ${ALL.length}）`;
-  // AI 面板作用域：明确告诉用户「基于多少条、是否被截断」
+  // AI 面板作用域：发送全部筛选结果，不再截断
   $("aiScope").textContent = rows.length
-    ? `（基于当前 ${rows.length} 条筛选结果${rows.length>60?"，仅发送前 60 条":""}）` : "";
+    ? `（基于当前 ${rows.length} 条筛选结果，全部发送）` : "";
   $("btnAsk").disabled = aiBusy || rows.length === 0;
   $("list").innerHTML = rows.length ? rows.map(j=>{
     const sMin = salaryMin(j.salary);
@@ -506,7 +601,18 @@ function render(){
       const ia = DEGREE_ORDER.indexOf(a), ib = DEGREE_ORDER.indexOf(b);
       return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
     });
-  fillSelect("fCity", cities, "全部");
+  // 城市是多选控件：重建 option 后要把已选状态套回去，再渲染标签和菜单
+  // 刷新时 PENDING_CITIES 已存好上次的选择，option 建好后在这里恢复
+  const keepCities = PENDING_CITIES.length
+    ? PENDING_CITIES
+    : [...$("fCity").selectedOptions].map(o=>o.value).filter(Boolean);
+  PENDING_CITIES = [];
+  const sel = $("fCity");
+  sel.innerHTML = `<option value="">全部</option>` +
+    cities.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join("");
+  setCities(keepCities.filter(c=>cities.includes(c)));
+  renderCityMenu(cities, getCities());
+
   fillSelect("fExp", exps, "全部");
   fillSelect("fDeg", degs, "全部");
 
@@ -525,6 +631,7 @@ function fillSelect(id, values, allLabel){
 // 刷新时 applyPrefs 先跑，那时 option 还不存在，赋值会失败并被浏览器丢弃。
 // 所以记住「待恢复的下拉值」，等 render() 把 option 建好后再套一次。
 let PENDING_SELECT = {};
+let PENDING_CITIES = [];   // 刷新后待恢复的城市多选
 
 function restorePendingSelects(){
   let touched = false;
@@ -637,7 +744,7 @@ async function ask(question){
   try{
     const r = await api("/api/ask", {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({question:q, jobs:rows.slice(0,60), history:aiHistory.slice(0,-1)})
+      body: JSON.stringify({question:q, jobs:rows, history:aiHistory.slice(0,-1)})
     });
     thinking.innerHTML = mdLite(r.answer);
     aiHistory.push({role:"assistant", content:r.answer});
@@ -664,7 +771,69 @@ $("askChips").addEventListener("click", e=>{
 
 /* ---------- 事件 ---------- */
 
-["kw","fCity","fSal","fExp","fDeg","sort","fNew"].forEach(id=>
+// ---- 城市多选交互 ----
+function closeCityMenu(){
+  $("fCityMenu").classList.add("hide");
+}
+$("fCityToggle").addEventListener("click", e=>{
+  e.stopPropagation();
+  const m = $("fCityMenu");
+  m.classList.toggle("hide");
+});
+$("fCityMenu").addEventListener("change", e=>{
+  const cb = e.target.closest("input[type=checkbox]");
+  if(!cb) return;
+  if(cb.dataset.city === ""){
+    // 「全部」：清空具体选择
+    setCities([]);
+  }else{
+    const cur = new Set(getCities());
+    cb.checked ? cur.add(cb.dataset.city) : cur.delete(cb.dataset.city);
+    setCities([...cur]);
+  }
+  renderCityMenu([...$("fCity").options].map(o=>o.value).filter(Boolean), getCities());
+  render(); savePrefs();
+});
+// 标签上的 ×：移除单个城市
+$("fCityTags").addEventListener("click", e=>{
+  const b = e.target.closest("[data-rm]");
+  if(!b) return;
+  setCities(getCities().filter(c=>c!==b.dataset.rm));
+  renderCityMenu([...$("fCity").options].map(o=>o.value).filter(Boolean), getCities());
+  render(); savePrefs();
+});
+document.addEventListener("click", e=>{
+  if(!e.target.closest("#fCityBox")) closeCityMenu();
+});
+
+// 一键跳到 AI 问答区：直接滚到页面最底部（AI 卡片是最后一块）
+$("btnGoAI").addEventListener("click", ()=>{
+  // 用 scrollTo 而不是 scrollIntoView(block:"start")：AI 卡片比视口矮，
+  // 顶部对齐会超出可滚动范围，停在半路。滚到底才真正「拉到底部」。
+  window.scrollTo({top: document.documentElement.scrollHeight, behavior:"smooth"});
+  // preventScroll 避免聚焦时浏览器再次跳转、抵消平滑滚动
+  setTimeout(()=>$("askInput").focus({preventScroll:true}), 450);
+});
+
+$("btnGoTop").addEventListener("click", ()=>{
+  window.scrollTo({top:0, behavior:"smooth"});
+});
+
+// 浮动按钮按滚动位置淡入淡出：已在顶部就没什么可「回到顶部」的，反之亦然
+function syncFab(){
+  const y = window.scrollY;
+  const max = document.documentElement.scrollHeight - window.innerHeight;
+  $("btnGoTop").style.opacity = y > 300 ? "1" : "0";
+  $("btnGoTop").style.pointerEvents = y > 300 ? "auto" : "none";
+  $("btnGoAI").style.opacity = (max - y) > 300 ? "1" : "0";
+  $("btnGoAI").style.pointerEvents = (max - y) > 300 ? "auto" : "none";
+}
+window.addEventListener("scroll", syncFab, {passive:true});
+window.addEventListener("resize", syncFab);
+setTimeout(syncFab, 300);   // 首屏数据加载后再同步一次
+
+// fCity 是 multiple select，改动由多选控件自己的 change 事件处理，不走这里
+["kw","fSal","fExp","fDeg","sort","fNew"].forEach(id=>
   $(id).addEventListener("input", ()=>{ render(); savePrefs(); }));
 
 // 抓取参数改动也立即记下来（不需要等点击「开始拉取」）
@@ -672,8 +841,19 @@ $("askChips").addEventListener("click", e=>{
   $(id).addEventListener("input", savePrefs));
 $("sDetail").addEventListener("change", savePrefs);
 
+// 抓取城市 → 筛选城市（单向同步）
+// 抓取完新城市后，筛选下拉里才会出现该城市；此时自动勾选它，省一次手动操作。
+$("sCity").addEventListener("input", ()=>{
+  const want = $("sCity").value.trim();
+  if(!want) return;
+  const opt = [...$("fCity").options].find(o=>o.value===want);
+  if(opt && !getCities().includes(want)) setCities([want]);
+});
+
 $("btnReset").addEventListener("click", ()=>{
-  ["kw","fCity","fSal","fExp","fDeg","fNew"].forEach(id=>$(id).value="");
+  ["kw","fSal","fExp","fDeg","fNew"].forEach(id=>$(id).value="");
+  setCities([]);                      // 城市是 multiple select，要单独清
+  renderCityMenu([...$("fCity").options].map(o=>o.value).filter(Boolean), []);
   $("sort").value="default"; render(); savePrefs();
 });
 $("btnScrape").addEventListener("click", scrape);

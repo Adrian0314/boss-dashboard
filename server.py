@@ -72,8 +72,10 @@ AI_BASE_URL = os.environ.get("BDS_AI_BASE_URL", "").strip()
 AI_API_KEY = os.environ.get("BDS_AI_API_KEY", "")
 AI_MODEL = os.environ.get("BDS_AI_MODEL", "").strip()
 AI_TIMEOUT = int(os.environ.get("BDS_AI_TIMEOUT", "90"))
-# 送进模型的岗位条数上限：上下文有限制，也避免一次请求太贵
-AI_MAX_JOBS = int(os.environ.get("BDS_AI_MAX_JOBS", "60"))
+# 送进模型的岗位条数上限：0 表示不限制（全部发送）。
+# 默认 0——看板的数据量通常几百条，全量发送让分析更完整；
+# 若你的中转站上下文窗口较小、或想控制费用，可设成具体数字。
+AI_MAX_JOBS = int(os.environ.get("BDS_AI_MAX_JOBS", "0"))
 # 推理型模型会先花大量 token 思考，预算给足，否则 content 会是 null
 AI_MAX_TOKENS = int(os.environ.get("BDS_AI_MAX_TOKENS", "8000"))
 
@@ -156,8 +158,8 @@ def _salary_min(salary):
 
 
 def build_jobs_context(jobs, limit):
-    """把岗位列表压成紧凑的上下文文本，控制在 token 预算内。"""
-    rows = jobs[:limit]
+    """把岗位列表压成紧凑的上下文文本。limit<=0 表示不限制。"""
+    rows = list(jobs) if not limit or limit <= 0 else list(jobs[:limit])
     lines = []
     for i, j in enumerate(rows, 1):
         bits = [str(j.get(k)) for k in ("boss_name", "company_industry", "company_scale") if j.get(k)]
@@ -178,9 +180,14 @@ def build_jobs_context(jobs, limit):
     return "\n".join(lines)
 
 
+def _take_jobs(jobs):
+    """按 AI_MAX_JOBS 截取；0 或负数视为不限制，返回全部。"""
+    return list(jobs) if AI_MAX_JOBS <= 0 else list(jobs[:AI_MAX_JOBS])
+
+
 def build_stats_block(jobs):
     """本地算好统计结果喂给模型：省掉模型的计算负担，显著降低其思考长度。"""
-    rows = jobs[:AI_MAX_JOBS]
+    rows = _take_jobs(jobs)
     n = len(rows)
     if not n:
         return "（无数据）"
@@ -281,8 +288,9 @@ def call_ai(question, jobs, model=None, history=None):
         "4. 数据不足以判断某一点时，明确说“当前数据无法判断”，绝不编造。\n"
         "5. 全文控制在 400 字以内。"
     )
+    sent = len(_take_jobs(jobs))
     user = (f"【已算好的统计结果】\n{stats}\n\n"
-            f"【岗位明细（共 {min(len(jobs), AI_MAX_JOBS)} 条）】\n{ctx}\n\n"
+            f"【岗位明细（共 {sent} 条）】\n{ctx}\n\n"
             f"【问题】{question}")
 
     msgs = [{"role": "system", "content": system}]
