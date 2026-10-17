@@ -54,10 +54,80 @@ def _load_secrets():
 
 _load_secrets()
 
-# ---- 路径配置（可用环境变量覆盖）------------------------------------
-REPO = os.environ.get("BDS_REPO", r"C:\Users\zheng\Desktop\boss-zhipin-scraper")
-VENV_PY = os.path.join(REPO, ".venv", "Scripts", "python.exe")
-SCRAPER = os.path.join(REPO, "scripts", "boss_cdp_raw.py")
+# ---- scraper 定位（自动探测）----------------------------------------
+# 看板只是前端，真正抓数据的是独立的 boss-zhipin-scraper 仓库。
+# 别人克隆本仓库后并不知道它在哪、装没装依赖，所以这里按优先级逐个找：
+#   1. BDS_REPO 环境变量 / secrets.env显式指定
+#   2. 与本文件同级的 boss-zhipin-scraper/（推荐：clone 时把两者放一起）
+#   3. 上级目录下的 boss-zhipin-scraper/
+#   4. ~/Desktop 等常见位置（兼容原有单机布局）
+# 全部找不到时保持 None，由前端提示安装步骤，而不是静默报 500。
+SCRAPER_RELPATH = os.path.join("scripts", "boss_cdp_raw.py")
+REPO_HINT = "https://github.com/Adrian0314/boss-zhipin-scraper"
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def scraper_python(repo):
+    """选一个能解释 scraper 的 Python：优先项目 venv（装了依赖），退回当前解释器。"""
+    if not repo:
+        return None
+    for rel in ((".venv", "Scripts", "python.exe"),
+                (".venv", "bin", "python"),
+                ("venv", "Scripts", "python.exe"),
+                ("venv", "bin", "python")):
+        p = os.path.join(repo, *rel)
+        if os.path.isfile(p):
+            return p
+    return sys.executable
+
+
+def _is_repo(path):
+    return bool(path) and os.path.isfile(os.path.join(path, SCRAPER_RELPATH))
+
+
+def find_scraper_repo():
+    """定位 boss-zhipin-scraper 目录；找不到返回 None。"""
+    env = os.environ.get("BDS_REPO", "").strip()
+    if env:
+        return os.path.abspath(env) if _is_repo(env) else None
+    home = os.path.expanduser("~")
+    candidates = [
+        os.path.join(HERE, "boss-zhipin-scraper"),
+        os.path.join(os.path.dirname(HERE), "boss-zhipin-scraper"),
+        os.path.join(HERE, "..", "boss-zhipin-scraper"),
+    ]
+    if home:
+        for base in ("Desktop", "Downloads", "Documents", ""):
+            candidates.append(os.path.join(home, base, "boss-zhipin-scraper"))
+    for c in candidates:
+        c = os.path.abspath(c)
+        if _is_repo(c):
+            return c
+    return None
+
+
+REPO = find_scraper_repo()
+SCRAPER = os.path.join(REPO, SCRAPER_RELPATH) if REPO else None
+
+
+def install_hint():
+    """scraper 缺失时给前端一段可直接复制的安装步骤。
+
+    返回空字符串表示环境已就绪。注意必须指向本人的 fork：
+    全职/兼职筛选依赖它新增的 --job-type/--count 参数，原版上游没有。
+    """
+    if REPO:
+        return ""
+    target = os.path.join(HERE, "boss-zhipin-scraper")
+    return (
+        f'git clone {REPO_HINT}.git "{target}"\n'
+        f'cd "{target}"\n'
+        'python -m venv .venv\n'
+        '.venv\\Scripts\\activate\n'
+        'pip install -r requirements.txt'
+    )
+
+
 RESULT_DIR = os.environ.get("BDS_RESULT_DIR",
                             os.path.expanduser("~/.boss-zhipin-scraper/job-result"))
 CDP_PORT = int(os.environ.get("BDS_CDP_PORT", "9222"))
@@ -79,7 +149,6 @@ AI_MAX_JOBS = int(os.environ.get("BDS_AI_MAX_JOBS", "0"))
 # 推理型模型会先花大量 token 思考，预算给足，否则 content 会是 null
 AI_MAX_TOKENS = int(os.environ.get("BDS_AI_MAX_TOKENS", "8000"))
 
-HERE = os.path.dirname(os.path.abspath(__file__))
 INDEX_HTML = os.path.join(HERE, "index.html")
 
 # 只接受 scraper 自己产出的文件名
@@ -377,7 +446,12 @@ def run_scrape(job_id, keyword, city, count, retries=3, detail=False, job_type="
     detail=False（默认）→ 传 --no-detail，只抓列表页。
     列表页已包含看板展示的全部字段（薪资/城市/公司/标签/技能/新增）。
     """
-    py = VENV_PY if os.path.exists(VENV_PY) else sys.executable
+    py = scraper_python(REPO) or sys.executable
+    if not SCRAPER:
+        with JOBS_LOCK:
+            JOBS[job_id].update(status="failed",
+                                 log="未找到 boss-zhipin-scraper，抓取无法执行。")
+        return
     cmd = [py, SCRAPER,
            "--keyword", keyword, "--city", city,
            "--count", str(count),
@@ -402,6 +476,13 @@ def run_scrape(job_id, keyword, city, count, retries=3, detail=False, job_type="
 class Handler(BaseHTTPRequestHandler):
     server_version = "boss-dashboard"
 
+    def _no_scraper(self):
+        """scraper 未安装时的统一应答：给可执行步骤，而不是裸 500。"""
+        return self._err(503,
+                         "未找到 boss-zhipin-scraper（抓取功能依赖它）。"
+                         f"请先安装：\n{install_hint()}\n"
+                         "装好后重启本服务即可自动识别。")
+
     def log_message(self, fmt, *args):
         pass  # 静默访问日志
 
@@ -423,7 +504,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _start_task(self, action, label):
         """注册一个后台命令任务并立即返回 job id（供前端轮询日志）。"""
-        py = VENV_PY if os.path.exists(VENV_PY) else sys.executable
+        py = scraper_python(REPO) or sys.executable
         job_id = uuid.uuid4().hex[:12]
         with JOBS_LOCK:
             JOBS[job_id] = {"status": "pending", "log": "", "file": None,
@@ -445,12 +526,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, f.read(), "text/html; charset=utf-8")
 
         if route == "/api/status":
+            py = scraper_python(REPO)
             return self._send(200, {
                 "cdp_ready": cdp_ready(),
                 "cdp_port": CDP_PORT,
-                "scraper_exists": os.path.exists(SCRAPER),
-                "python_exists": os.path.exists(VENV_PY),
+                "scraper_exists": bool(REPO),
+                "python_exists": bool(py),
                 "repo": REPO,
+                "repo_hint": REPO_HINT,
+                "install_hint": install_hint(),
                 "result_dir": RESULT_DIR,
                 "result_dir_exists": os.path.isdir(RESULT_DIR),
             })
@@ -502,8 +586,8 @@ class Handler(BaseHTTPRequestHandler):
 
         # ---- Chrome / 登录态管理 ----
         if parsed.path in ("/api/chrome/start", "/api/chrome/stop", "/api/chrome/check"):
-            if not os.path.exists(SCRAPER):
-                return self._err(500, f"未找到 scraper 脚本: {SCRAPER}")
+            if not SCRAPER:
+                return self._no_scraper()
             action = {"start": "--setup-chrome",
                       "stop": "--stop-chrome",
                       "check": "--check"}[parsed.path.rsplit("/", 1)[1]]
@@ -563,8 +647,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if not keyword or not city:
             return self._err(400, "关键词和城市不能为空")
-        if not os.path.exists(SCRAPER):
-            return self._err(500, f"未找到 scraper 脚本: {SCRAPER}")
+        if not SCRAPER:
+            return self._no_scraper()
 
         # 预检：CDP 没起来就别启动 scraper，否则只会抛一屏 traceback
         if not cdp_ready():
