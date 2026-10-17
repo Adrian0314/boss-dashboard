@@ -365,11 +365,14 @@ def run_command(job_id, cmd, cwd=REPO):
         set_state(status="failed", log=JOBS[job_id].get("log", "") + f"\n启动失败: {e}")
 
 
-def run_scrape(job_id, keyword, city, count, retries=3, detail=False):
+def run_scrape(job_id, keyword, city, count, retries=3, detail=False, job_type=""):
     """跑一次真实抓取，完成后定位本轮产出的结果文件（mtime 在启动之后）。
 
     以「目标条数」为停止条件：scraper 逐页累积，达到 count 即停；
     连续 retries 页没有新增也会停（说明已无更多结果）。
+
+    job_type: ""=全部 / "full"=全职 / "part"=兼职，
+             对应 scraper 的 --job-type（服务端过滤，不是事后筛）。
 
     detail=False（默认）→ 传 --no-detail，只抓列表页。
     列表页已包含看板展示的全部字段（薪资/城市/公司/标签/技能/新增）。
@@ -379,6 +382,8 @@ def run_scrape(job_id, keyword, city, count, retries=3, detail=False):
            "--keyword", keyword, "--city", city,
            "--count", str(count),
            "--max-retries", str(retries)]
+    if job_type in ("full", "part"):
+        cmd += ["--job-type", job_type]
     if not detail:
         cmd.append("--no-detail")
     run_command(job_id, cmd)
@@ -551,6 +556,10 @@ class Handler(BaseHTTPRequestHandler):
         except (TypeError, ValueError):
             retries = 3
         detail = bool(payload.get("detail", False))
+        # 用工类型：只认 full/part，其余一律当「全部」，避免脏值透传给 scraper
+        job_type = str(payload.get("jobType", "")).strip()
+        if job_type not in ("full", "part"):
+            job_type = ""
 
         if not keyword or not city:
             return self._err(400, "关键词和城市不能为空")
@@ -566,9 +575,10 @@ class Handler(BaseHTTPRequestHandler):
         with JOBS_LOCK:
             JOBS[job_id] = {"status": "pending", "log": "", "file": None,
                             "keyword": keyword, "city": city,
-                            "count": count, "detail": detail}
+                            "count": count, "detail": detail,
+                            "job_type": job_type}
         threading.Thread(target=run_scrape,
-                         args=(job_id, keyword, city, count, retries, detail),
+                         args=(job_id, keyword, city, count, retries, detail, job_type),
                          daemon=True).start()
         return self._send(200, {"job": job_id})
 

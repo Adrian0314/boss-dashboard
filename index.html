@@ -224,6 +224,14 @@
         <input id="sCount" type="number" value="60" min="1" max="500" style="width:86px">
       </div>
       <div class="field">
+        <label>用工类型</label>
+        <select id="sJobType" style="width:104px">
+          <option value="">全部</option>
+          <option value="full">全职</option>
+          <option value="part">兼职</option>
+        </select>
+      </div>
+      <div class="field">
         <label>详情页</label>
         <select id="sDetail" style="width:150px">
           <option value="0">不抓（快，推荐）</option>
@@ -259,6 +267,7 @@
       <div class="field"><label>最低月薪(K)</label><input id="fSal" type="number" placeholder="不限" style="width:110px"></div>
       <div class="field"><label>经验</label><select id="fExp"><option value="">全部</option></select></div>
       <div class="field"><label>学历</label><select id="fDeg"><option value="">全部</option></select></div>
+      <div class="field"><label>用工类型</label><select id="fJobType"><option value="">全部</option></select></div>
       <div class="field"><label>排序</label><select id="sort">
         <option value="default">默认</option><option value="salary">薪资 高→低</option>
         <option value="new">新增优先</option><option value="title">职位名</option></select></div>
@@ -381,7 +390,7 @@ async function api(url, opts){
 // 记住上次的抓取参数、筛选条件、选中的结果文件，刷新/重开浏览器都不丢
 const STORE_KEY = "boss-dashboard:v1";
 // 需要记忆的字段：抓取区(sKw/sCity/sCount) + 筛选区(kw/fCity/fSal/fExp/sort/fNew)
-const PERSIST_FIELDS = ["sKw","sCity","sCount","sDetail","kw","fCity","fSal","fExp","fDeg","sort","fNew"];
+const PERSIST_FIELDS = ["sKw","sCity","sCount","sJobType","sDetail","kw","fCity","fSal","fExp","fDeg","fJobType","sort","fNew"];
 
 function loadPrefs(){
   try{ return JSON.parse(localStorage.getItem(STORE_KEY) || "{}"); }
@@ -407,7 +416,7 @@ function savePrefs(){
 
 function applyPrefs(){
   const data = loadPrefs();
-  const DYN_SELECTS = ["fExp","fDeg"];   // 选项由数据生成，需延后套用
+  const DYN_SELECTS = ["fExp","fDeg","fJobType"];   // 选项由数据生成，需延后套用
   PENDING_CITIES = Array.isArray(data.fCity) ? data.fCity : [];
   PERSIST_FIELDS.forEach(id=>{
     if(id === "fCity") return;
@@ -544,6 +553,7 @@ function currentFilter(){
   const cities = getCities();
   const sal = parseFloat($("fSal").value), exp = $("fExp").value;
   const deg = $("fDeg").value;
+  const jt = $("fJobType").value;
   const onlyNew = $("fNew").value === "1";
   let rows = ALL.filter(j=>{
     if(cities.length){
@@ -553,6 +563,7 @@ function currentFilter(){
     if(!isNaN(sal)){ const s = salaryMin(j.salary); if(s===null || s<sal) return false; }
     if(exp && expOf(j.tags) !== exp) return false;
     if(deg && degreeOf(j.tags) !== deg) return false;
+    if(jt && (j.job_type || "") !== jt) return false;
     if(onlyNew && !j.is_new) return false;
     if(q){
       const hay = [j.title,j.boss_name,j.skills,j.job_labels,j.welfare,j.tags,
@@ -614,6 +625,7 @@ function render(){
         <span class="badge">📍 ${hl(j.location,q)}</span>
         ${expOf(j.tags)?`<span class="badge">🎯 ${esc(expOf(j.tags))}</span>`:""}
         ${degreeOf(j.tags)?`<span class="badge">🎓 ${esc(degreeOf(j.tags))}</span>`:""}
+        ${j.job_type?`<span class="badge">🧕 ${esc(j.job_type)}</span>`:""}
         ${splitPipes(j.tags).filter(x=>x!==expOf(j.tags) && x!==degreeOf(j.tags)).map(x=>`<span class="badge">${hl(x,q)}</span>`).join("")}
         ${j.boss_active_status?`<span class="badge">💬 ${esc(j.boss_active_status)}</span>`:""}
       </div>
@@ -650,6 +662,9 @@ function render(){
 
   fillSelect("fExp", exps, "全部");
   fillSelect("fDeg", degs, "全部");
+  // 用工类型：只列出数据里真实出现过的类型（全职/兼职）
+  const jobTypes = [...new Set(ALL.map(j=>j.job_type).filter(Boolean))].sort();
+  fillSelect("fJobType", jobTypes, "全部");
 
   // 选项建好后再套用刷新前记住的下拉值；套上后需要重算一次，否则列表还是旧的筛选结果
   if(restorePendingSelects()){ render(); }
@@ -695,6 +710,7 @@ async function scrape(){
       body: JSON.stringify({
         keyword: $("sKw").value.trim(), city: $("sCity").value.trim(),
         count: parseInt($("sCount").value, 10) || 60,
+        jobType: $("sJobType").value || "",
         detail: $("sDetail").value === "1"
       })
     });
@@ -1033,13 +1049,14 @@ window.addEventListener("resize", syncFab);
 setTimeout(syncFab, 300);   // 首屏数据加载后再同步一次
 
 // fCity 是 multiple select，改动由多选控件自己的 change 事件处理，不走这里
-["kw","fSal","fExp","fDeg","sort","fNew"].forEach(id=>
+["kw","fSal","fExp","fDeg","fJobType","sort","fNew"].forEach(id=>
   $(id).addEventListener("input", ()=>{ render(); savePrefs(); }));
 
 // 抓取参数改动也立即记下来（不需要等点击「开始拉取」）
 ["sKw","sCity","sCount"].forEach(id=>
   $(id).addEventListener("input", savePrefs));
 $("sDetail").addEventListener("change", savePrefs);
+$("sJobType").addEventListener("change", savePrefs);
 
 // 抓取城市 → 筛选城市（单向同步）
 // 抓取完新城市后，筛选下拉里才会出现该城市；此时自动勾选它，省一次手动操作。
@@ -1051,7 +1068,7 @@ $("sCity").addEventListener("input", ()=>{
 });
 
 $("btnReset").addEventListener("click", ()=>{
-  ["kw","fSal","fExp","fDeg","fNew"].forEach(id=>$(id).value="");
+  ["kw","fSal","fExp","fDeg","fJobType","fNew"].forEach(id=>$(id).value="");
   setCities([]);                      // 城市是 multiple select，要单独清
   renderCityMenu([...$("fCity").options].map(o=>o.value).filter(Boolean), []);
   $("sort").value="default"; render(); savePrefs();
