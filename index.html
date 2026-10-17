@@ -153,7 +153,10 @@
     <div class="row">
       <div class="field"><label>关键词</label><input id="sKw" value="AI Agent" style="width:170px"></div>
       <div class="field"><label>城市</label><input id="sCity" value="上海" style="width:110px"></div>
-      <div class="field"><label>页数</label><input id="sPages" type="number" value="2" min="1" max="20" style="width:74px"></div>
+      <div class="field">
+        <label>目标条数</label>
+        <input id="sCount" type="number" value="60" min="1" max="500" style="width:86px">
+      </div>
       <div class="field">
         <label>详情页</label>
         <select id="sDetail" style="width:150px">
@@ -285,8 +288,8 @@ async function api(url, opts){
 /* ---------- 输入记忆（localStorage）---------- */
 // 记住上次的抓取参数、筛选条件、选中的结果文件，刷新/重开浏览器都不丢
 const STORE_KEY = "boss-dashboard:v1";
-// 需要记忆的字段：抓取区(sKw/sCity/sPages) + 筛选区(kw/fCity/fSal/fExp/sort/fNew)
-const PERSIST_FIELDS = ["sKw","sCity","sPages","sDetail","kw","fCity","fSal","fExp","fDeg","sort","fNew"];
+// 需要记忆的字段：抓取区(sKw/sCity/sCount) + 筛选区(kw/fCity/fSal/fExp/sort/fNew)
+const PERSIST_FIELDS = ["sKw","sCity","sCount","sDetail","kw","fCity","fSal","fExp","fDeg","sort","fNew"];
 
 function loadPrefs(){
   try{ return JSON.parse(localStorage.getItem(STORE_KEY) || "{}"); }
@@ -549,7 +552,7 @@ async function scrape(){
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({
         keyword: $("sKw").value.trim(), city: $("sCity").value.trim(),
-        pages: $("sPages").value,
+        count: parseInt($("sCount").value, 10) || 60,
         detail: $("sDetail").value === "1"
       })
     });
@@ -665,7 +668,7 @@ $("askChips").addEventListener("click", e=>{
   $(id).addEventListener("input", ()=>{ render(); savePrefs(); }));
 
 // 抓取参数改动也立即记下来（不需要等点击「开始拉取」）
-["sKw","sCity","sPages"].forEach(id=>
+["sKw","sCity","sCount"].forEach(id=>
   $(id).addEventListener("input", savePrefs));
 $("sDetail").addEventListener("change", savePrefs);
 

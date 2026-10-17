@@ -357,15 +357,20 @@ def run_command(job_id, cmd, cwd=REPO):
         set_state(status="failed", log=JOBS[job_id].get("log", "") + f"\n启动失败: {e}")
 
 
-def run_scrape(job_id, keyword, city, pages, detail=False):
+def run_scrape(job_id, keyword, city, count, retries=3, detail=False):
     """跑一次真实抓取，完成后定位本轮产出的结果文件（mtime 在启动之后）。
 
+    以「目标条数」为停止条件：scraper 逐页累积，达到 count 即停；
+    连续 retries 页没有新增也会停（说明已无更多结果）。
+
     detail=False（默认）→ 传 --no-detail，只抓列表页。
-    列表页已包含看板展示的全部字段（薪资/城市/公司/标签/技能/新增），
-    实测 5 页约 2.4 分钟；开启详情要逐条访问职位页，71 条要 44 分钟。
+    列表页已包含看板展示的全部字段（薪资/城市/公司/标签/技能/新增）。
     """
     py = VENV_PY if os.path.exists(VENV_PY) else sys.executable
-    cmd = [py, SCRAPER, "--keyword", keyword, "--city", city, "--pages", str(pages)]
+    cmd = [py, SCRAPER,
+           "--keyword", keyword, "--city", city,
+           "--count", str(count),
+           "--max-retries", str(retries)]
     if not detail:
         cmd.append("--no-detail")
     run_command(job_id, cmd)
@@ -530,9 +535,13 @@ class Handler(BaseHTTPRequestHandler):
         keyword = str(payload.get("keyword", "")).strip()
         city = str(payload.get("city", "")).strip()
         try:
-            pages = max(1, min(20, int(payload.get("pages", 3))))
+            count = max(1, min(500, int(payload.get("count", 60))))
         except (TypeError, ValueError):
-            pages = 3
+            count = 60
+        try:
+            retries = max(1, min(10, int(payload.get("retries", 3))))
+        except (TypeError, ValueError):
+            retries = 3
         detail = bool(payload.get("detail", False))
 
         if not keyword or not city:
@@ -549,9 +558,9 @@ class Handler(BaseHTTPRequestHandler):
         with JOBS_LOCK:
             JOBS[job_id] = {"status": "pending", "log": "", "file": None,
                             "keyword": keyword, "city": city,
-                            "pages": pages, "detail": detail}
+                            "count": count, "detail": detail}
         threading.Thread(target=run_scrape,
-                         args=(job_id, keyword, city, pages, detail),
+                         args=(job_id, keyword, city, count, retries, detail),
                          daemon=True).start()
         return self._send(200, {"job": job_id})
 
