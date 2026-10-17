@@ -118,6 +118,28 @@
   .askrow input{flex:1}
   .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 
+  /* ---- AI 会话 ---- */
+  .conv-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .conv-current{background:var(--panel2);border:1px solid var(--line);color:var(--fg);
+    border-radius:8px;padding:5px 12px;cursor:pointer;font-family:inherit;font-size:13px;
+    display:inline-flex;align-items:center;gap:6px;max-width:320px}
+  .conv-current:hover{border-color:var(--accent2)}
+  .conv-current #convName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .conv-current .caret{opacity:.6;font-size:11px}
+  .conv-list{border:1px solid var(--line);border-radius:8px;background:var(--panel2);
+    margin-bottom:10px;max-height:300px;overflow-y:auto}
+  .conv-item{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;
+    border-bottom:1px solid var(--line)}
+  .conv-item:last-child{border-bottom:0}
+  .conv-item:hover{background:var(--panel)}
+  .conv-item.active{background:rgba(63,185,80,.12);box-shadow:inset 3px 0 0 var(--accent)}
+  .conv-main{flex:1;min-width:0}
+  .conv-title{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .conv-sub{font-size:11px;color:var(--muted);margin-top:2px}
+  .conv-del{background:transparent;border:0;color:var(--muted);cursor:pointer;
+    font-size:15px;padding:2px 6px;border-radius:4px;line-height:1}
+  .conv-del:hover{color:var(--err);background:rgba(248,81,73,.12)}
+
   /* ---- 多选控件 ---- */
   .multisel{position:relative;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
     min-width:150px;min-height:36px;padding:4px 6px;background:var(--panel2);
@@ -267,6 +289,19 @@
   <!-- AI 问答：基于当前筛选结果提问 -->
   <div class="card" id="aiCard">
     <h2>AI 数据分析 <span id="aiScope" class="sub" style="text-transform:none"></span></h2>
+
+    <!-- 会话工具条：常驻显示当前会话，随时可切换 -->
+    <div class="conv-bar">
+      <button id="btnNewConv" class="ghost">＋ 新建会话</button>
+      <button id="btnConvList" class="conv-current" title="点击展开历史会话">
+        <span id="convName">新会话</span> <span class="caret">▾</span>
+      </button>
+      <button id="btnRenameConv" class="ghost" title="重命名当前会话">重命名</button>
+      <button id="btnDelConv" class="ghost" title="删除当前会话">删除</button>
+      <span id="convMeta" class="sub" style="margin-left:auto"></span>
+    </div>
+    <div class="conv-list hide" id="convList"></div>
+
     <div class="chat" id="chat">
       <div class="msg bot">我可以基于你<strong>当前筛选出的岗位</strong>回答问题。
 例如薪资分布、技能要求、经验门槛、值得优先投的岗位等。
@@ -698,8 +733,101 @@ function friendlyError(msg){
 }
 
 /* ---------- AI 问答 ---------- */
-let aiHistory = [];
 let aiBusy = false;
+
+/* ---------- AI 会话管理 ---------- */
+// 会话存 localStorage：刷新/重开都在，无需后端。
+// 结构：{ id, name, createdAt, updatedAt, messages:[{role,content}] }
+const CONV_KEY = "boss-dashboard:conversations";
+const MAX_CONV = 50;         // 最多保留 50 个会话
+const MAX_MSG_PER_CONV = 40; // 单会话最多 40 条消息，防无限膨胀
+
+let convs = [];
+let curConvId = null;
+
+function loadConvs(){
+  try{
+    const d = JSON.parse(localStorage.getItem(CONV_KEY) || "null");
+    convs = Array.isArray(d?.convs) ? d.convs : [];
+    curConvId = d?.cur || (convs[0]?.id ?? null);
+  }catch(e){ convs = []; curConvId = null; }
+}
+function saveConvs(){
+  try{
+    localStorage.setItem(CONV_KEY, JSON.stringify({convs, cur: curConvId}));
+  }catch(e){ /* 隐私模式写入失败可忽略 */ }
+}
+function curConv(){ return convs.find(c=>c.id === curConvId) || null; }
+function newConv(){
+  const c = {id: "c" + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+             name: "新会话", createdAt: Date.now(), updatedAt: Date.now(), messages: []};
+  convs.unshift(c);
+  if(convs.length > MAX_CONV) convs.length = MAX_CONV;
+  curConvId = c.id;
+  saveConvs();
+  return c;
+}
+function convTitle(c){
+  const first = c.messages.find(m=>m.role === "user");
+  return first ? first.content.slice(0, 24) : "（空会话）";
+}
+function relTime(ts){
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if(s < 60) return "刚刚";
+  if(s < 3600) return Math.floor(s/60) + " 分钟前";
+  if(s < 86400) return Math.floor(s/3600) + " 小时前";
+  return Math.floor(s/86400) + " 天前";
+}
+function renderChat(){
+  const box = $("chat");
+  const c = curConv();
+  const msgs = c ? c.messages : [];
+  if(!msgs.length){
+    box.innerHTML = `<div class="msg bot">我可以基于你<strong>当前筛选出的岗位</strong>回答问题。
+例如薪资分布、技能要求、经验门槛、值得优先投的岗位等。
+数据不足时我会直说，不会编。</div>`;
+  }else{
+    box.innerHTML = msgs.map(m =>
+      m.role === "user"
+        ? `<div class="msg user">${esc(m.content)}</div>`
+        : `<div class="msg bot">${mdLite(m.content)}</div>`
+    ).join("");
+  }
+  box.scrollTop = box.scrollHeight;
+}
+function renderConvBar(){
+  const c = curConv();
+  $("convName").textContent = c ? (c.name === "新会话" ? convTitle(c) : c.name) : "新会话";
+  const n = c ? c.messages.filter(m=>m.role==="user").length : 0;
+  $("convMeta").textContent = c ? `${n} 次提问 · ${relTime(c.updatedAt)}` : "";
+  $("btnDelConv").disabled = !convs.length;
+  $("btnRenameConv").disabled = !c;
+}
+function renderConvList(){
+  const box = $("convList");
+  if(!convs.length){
+    box.innerHTML = `<div class="conv-item"><div class="conv-main">
+      <div class="conv-title">还没有历史会话</div>
+      <div class="conv-sub">提问后会自动保存</div></div></div>`;
+    return;
+  }
+  box.innerHTML = convs.map(c=>{
+    const n = c.messages.filter(m=>m.role==="user").length;
+    return `<div class="conv-item ${c.id===curConvId?"active":""}" data-id="${c.id}">
+      <div class="conv-main">
+        <div class="conv-title">${esc(c.name==="新会话"?convTitle(c):c.name)}</div>
+        <div class="conv-sub">${n} 次提问 · ${relTime(c.updatedAt)}</div>
+      </div>
+      <button class="conv-del" data-del="${c.id}" title="删除该会话">×</button>
+    </div>`;
+  }).join("");
+}
+// 切换 / 新建 / 渲染的统一入口
+function refreshConvUI(){
+  renderConvBar();
+  renderChat();
+  renderConvList();
+}
 
 function addMsg(text, cls){
   const d = document.createElement("div");
@@ -736,33 +864,105 @@ async function ask(question){
   aiBusy = true;
   $("btnAsk").disabled = true;
   $("aiNote").textContent = "";
-  addMsg(q, "user");
-  aiHistory.push({role:"user", content:q});
+
+  // 没有会话就自动开一个，保证提问永远有归属
+  const conv = curConv() || newConv();
+  conv.messages.push({role:"user", content:q});
+  conv.updatedAt = Date.now();
+  if(conv.messages.length > MAX_MSG_PER_CONV)
+    conv.messages.splice(0, conv.messages.length - MAX_MSG_PER_CONV);
+
   const thinking = addMsg("正在分析…", "bot");
   $("askInput").value = "";
 
+  // 送给模型的历史 = 本会话此前的消息（去掉刚才那条 user，它会单独传）
+  const prior = conv.messages.slice(0, -1).slice(-12);
   try{
     const r = await api("/api/ask", {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({question:q, jobs:rows, history:aiHistory.slice(0,-1)})
+      body: JSON.stringify({question:q, jobs:rows, history:prior})
     });
     thinking.innerHTML = mdLite(r.answer);
-    aiHistory.push({role:"assistant", content:r.answer});
+    conv.messages.push({role:"assistant", content:r.answer});
   }catch(e){
     thinking.className = "msg err";
     thinking.textContent = "提问失败：" + e.message;
   }finally{
+    conv.updatedAt = Date.now();
+    saveConvs();
+    refreshConvUI();
     aiBusy = false;
     $("btnAsk").disabled = false;
-    $("chat").scrollTop = $("chat").scrollHeight;
   }
 }
 
 $("btnAsk").addEventListener("click", ()=>ask());
 $("askInput").addEventListener("keydown", e=>{ if(e.key==="Enter") ask(); });
+
+// 新建会话
+$("btnNewConv").addEventListener("click", ()=>{
+  newConv();
+  $("convList").classList.add("hide");
+  refreshConvUI();
+  $("askInput").focus();
+});
+
+// 展开/收起历史会话列表
+$("btnConvList").addEventListener("click", e=>{
+  e.stopPropagation();
+  $("convList").classList.toggle("hide");
+});
+// 点击外部关闭列表
+document.addEventListener("click", e=>{
+  if(!e.target.closest("#convList") && !e.target.closest("#btnConvList"))
+    $("convList").classList.add("hide");
+});
+
+// 切换会话 / 删除会话
+$("convList").addEventListener("click", e=>{
+  const del = e.target.closest("[data-del]");
+  if(del){
+    e.stopPropagation();
+    const id = del.dataset.del;
+    convs = convs.filter(c=>c.id !== id);
+    if(curConvId === id) curConvId = convs[0]?.id ?? null;
+    saveConvs(); refreshConvUI();
+    return;
+  }
+  const item = e.target.closest("[data-id]");
+  if(item){
+    curConvId = item.dataset.id;
+    saveConvs(); refreshConvUI();
+    $("convList").classList.add("hide");
+  }
+});
+
+// 删除会话（工具条上的按钮，针对当前会话）
+$("btnDelConv").addEventListener("click", ()=>{
+  const c = curConv();
+  if(!c) return;
+  if(!confirm(`删除会话「${c.name === "新会话" ? convTitle(c) : c.name}」？\n该操作不可撤销。`)) return;
+  convs = convs.filter(x=>x.id !== c.id);
+  curConvId = convs[0]?.id ?? null;
+  saveConvs();
+  refreshConvUI();
+});
+
+// 重命名会话
+$("btnRenameConv").addEventListener("click", ()=>{
+  const c = curConv();
+  if(!c) return;
+  const name = prompt("给这个会话起个名字：", c.name === "新会话" ? convTitle(c) : c.name);
+  if(name === null) return;                 // 取消
+  const v = name.trim();
+  if(v) { c.name = v.slice(0, 40); saveConvs(); refreshConvUI(); }
+});
+
+// 清空 = 只清当前会话的消息，不删会话
 $("btnClearChat").addEventListener("click", ()=>{
-  aiHistory = [];
-  $("chat").innerHTML = '<div class="msg bot">已清空。换个问题问我吧。</div>';
+  const c = curConv();
+  if(c){ c.messages = []; c.updatedAt = Date.now(); saveConvs(); }
+  refreshConvUI();
 });
 $("askChips").addEventListener("click", e=>{
   const t = e.target.closest(".chip");
@@ -875,6 +1075,8 @@ document.addEventListener("click", e=>{
 /* ---------- 启动 ---------- */
 (async function init(){
   const prefs = applyPrefs();          // 先恢复上次的输入，再拉数据
+  loadConvs();                        // 恢复 AI 会话
+  refreshConvUI();
   await loadStatus();
   try{
     const files = await loadFiles();
