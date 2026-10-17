@@ -1,0 +1,27 @@
+# ---- 本地密钥（绝不能提交）----
+secrets.env
+.env
+*.env.local
+
+# ---- 开发期验证脚本 ----
+_e2e.py
+_e2e2.py
+_layout.py
+_make_sample.py
+_ai_test.py
+_prefs_test.py
+_deg_test.py
+_wire_deg.py
+
+# ---- 运行时产物 ----
+__pycache__/
+*.py[cod]
+*.log
+_testdata/
+_shot_*.png
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BOSS 岗位看板</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2128; --line:#30363d;
+    --fg:#e6edf3; --muted:#8b949e; --accent:#3fb950; --accent2:#58a6ff;
+    --warn:#d29922; --err:#f85149; --radius:12px;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#f6f8fa; --panel:#ffffff; --panel2:#f0f2f5; --line:#d8dee4;
+      --fg:#1f2328; --muted:#656d76; --accent:#1a7f37; --accent2:#0969da;
+      --warn:#9a6700; --err:#cf222e;
+    }
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--fg); font:14px/1.6 -apple-system,"Segoe UI",
+    "PingFang SC","Microsoft YaHei",sans-serif; padding:24px; min-height:100vh;
+  }
+  .wrap{max-width:1200px;margin:0 auto}
+  header{display:flex;align-items:baseline;gap:12px;margin-bottom:4px;flex-wrap:wrap}
+  h1{font-size:22px;font-weight:650;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:13px}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+  .dot.on{background:var(--accent)} .dot.off{background:var(--err)}
+  .dot.wait{background:var(--warn)}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px;margin-top:16px}
+  .card h2{font-size:14px;font-weight:600;color:var(--muted);margin-bottom:12px;
+    text-transform:uppercase;letter-spacing:.06em}
+
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field label{font-size:12px;color:var(--muted)}
+  input,select{
+    background:var(--panel2);color:var(--fg);border:1px solid var(--line);
+    border-radius:8px;padding:8px 11px;font-size:14px;font-family:inherit;outline:none;
+    transition:border-color .15s,box-shadow .15s;
+  }
+  input:focus,select:focus{border-color:var(--accent2);box-shadow:0 0 0 3px rgba(88,166,255,.15)}
+  #kw{flex:1;min-width:220px}
+  button{
+    background:var(--accent);color:#fff;border:0;border-radius:8px;padding:9px 18px;
+    font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;
+    transition:opacity .15s,transform .1s;
+  }
+  button:hover:not(:disabled){opacity:.88} button:active:not(:disabled){transform:translateY(1px)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
+
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .stat b{display:block;font-size:22px;font-weight:650;line-height:1.2}
+  .stat span{font-size:12px;color:var(--muted)}
+
+  .bar{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden;margin-top:6px}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent))}
+
+  .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .chip{background:var(--panel2);border:1px solid var(--line);border-radius:20px;
+    padding:3px 10px;font-size:12px;color:var(--muted);cursor:pointer;transition:.15s}
+  .chip:hover{border-color:var(--accent2);color:var(--fg)}
+  .chip.hot{background:rgba(88,166,255,.14);border-color:var(--accent2);color:var(--fg)}
+
+  .list{margin-top:16px;display:flex;flex-direction:column;gap:10px}
+  .job{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:14px 16px;transition:border-color .15s,transform .1s}
+  .job:hover{border-color:var(--accent2);transform:translateX(2px)}
+  .job-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+  .job h3{font-size:15px;font-weight:600}
+  .job .co{color:var(--muted);font-size:13px;margin-top:2px}
+  .sal{font-weight:650;color:var(--accent);white-space:nowrap;font-size:15px}
+  .meta{color:var(--muted);font-size:12.5px;margin-top:8px;display:flex;
+    flex-wrap:wrap;gap:6px 14px}
+  .badge{background:var(--panel2);border:1px solid var(--line);border-radius:6px;
+    padding:1px 7px;font-size:12px}
+  .badge.new{background:rgba(63,185,80,.15);border-color:var(--accent);color:var(--accent)}
+  .skills{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
+  .skill{background:rgba(88,166,255,.1);border-radius:6px;padding:2px 8px;font-size:12px;
+    color:var(--accent2);cursor:pointer}
+  .skill:hover{background:rgba(88,166,255,.22)}
+  .links{margin-top:8px;display:flex;gap:12px;font-size:12.5px}
+  .links a{color:var(--accent2);text-decoration:none} .links a:hover{text-decoration:underline}
+
+  pre{background:#0b0f14;color:#c9d1d9;border-radius:8px;padding:12px;overflow:auto;
+    max-height:280px;font:12px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;
+    word-break:break-all;border:1px solid var(--line)}
+  .empty{color:var(--muted);text-align:center;padding:40px 0;font-size:14px}
+  .note{color:var(--muted);font-size:12.5px;margin-top:10px;line-height:1.7}
+  .note code{background:var(--panel2);padding:1px 6px;border-radius:4px;font-size:12px}
+  .grid2{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;align-items:start}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+  .hide{display:none}
+  mark{background:rgba(255,212,0,.28);color:inherit;border-radius:3px;padding:0 1px}
+
+  /* CDP 提示卡：未就绪时高亮 */
+  #cdpCard.warn{border-color:var(--warn);background:rgba(210,153,34,.08)}
+  #cdpCard.ok{border-color:var(--line)}
+  button.primary{background:var(--accent)}
+  button.primary:disabled{background:var(--muted)}
+
+  /* AI 问答面板 */
+  .chat{max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px}
+  .msg{max-width:88%;padding:9px 13px;border-radius:10px;font-size:13.5px;line-height:1.65;
+    white-space:pre-wrap;word-break:break-word}
+  .msg.user{align-self:flex-end;background:var(--accent2);color:#fff;border-bottom-right-radius:3px}
+  .msg.bot{align-self:flex-start;background:var(--panel);border:1px solid var(--line);
+    border-bottom-left-radius:3px}
+  .msg.err{background:rgba(248,81,73,.12);border:1px solid var(--err);color:var(--err)}
+  .askrow{display:flex;gap:10px;margin-top:12px}
+  .askrow input{flex:1}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .msg.bot strong{color:var(--accent2)}
+  .msg.bot code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12.5px}
+  .msg.bot pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;
+    padding:8px;overflow-x:auto;margin:6px 0;font-size:12px}
+  .msg.bot h4{font-size:13.5px;margin:8px 0 4px;color:var(--fg)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>BOSS 岗位看板</h1>
+    <span class="sub"><span id="cdpDot" class="dot off"></span><span id="cdpTxt">检测中…</span></span>
+  </header>
+  <p class="sub">数据源：本地 boss-zhipin-scraper 抓取结果（<code>~/.boss-zhipin-scraper/job-result</code>）</p>
+
+  <!-- CDP 状态栏：未就绪时给出一键启动入口 -->
+  <div class="card" id="cdpCard">
+    <div class="row">
+      <div style="flex:1;min-width:240px">
+        <div style="font-weight:600" id="cdpTitle">Chrome CDP 未启动</div>
+        <div class="sub" id="cdpDesc" style="margin-top:3px">
+          抓取需要连接一个已登录 BOSS直聘的专用 Chrome。点右侧按钮会自动拉起它，然后在里面扫码登录。
+        </div>
+      </div>
+      <button id="btnChrome" class="primary">启动 Chrome 并登录</button>
+      <button id="btnStopChrome" class="ghost hide">关闭 Chrome</button>
+    </div>
+    <pre id="cdpLog" class="hide"></pre>
+  </div>
+
+  <!-- 一键拉取 -->
+  <div class="card">
+    <h2>一键拉取</h2>
+    <div class="row">
+      <div class="field"><label>关键词</label><input id="sKw" value="AI Agent" style="width:170px"></div>
+      <div class="field"><label>城市</label><input id="sCity" value="上海" style="width:110px"></div>
+      <div class="field"><label>页数</label><input id="sPages" type="number" value="2" min="1" max="20" style="width:74px"></div>
+      <div class="field">
+        <label>详情页</label>
+        <select id="sDetail" style="width:150px">
+          <option value="0">不抓（快，推荐）</option>
+          <option value="1">抓取 JD 正文（慢）</option>
+        </select>
+      </div>
+      <button id="btnScrape">开始拉取</button>
+      <button id="btnRefresh" class="ghost">刷新列表</button>
+      <div class="field" style="flex:1;min-width:180px">
+        <label>或选择已有结果文件</label><select id="fileSel"></select>
+      </div>
+    </div>
+    <div id="logWrap" class="hide" style="margin-top:12px">
+      <h2 style="margin-bottom:8px">执行日志</h2>
+      <pre id="logBox"></pre>
+    </div>
+  </div>
+
+  <!-- 筛选 -->
+  <div class="card">
+    <h2>筛选</h2>
+    <div class="row">
+      <div class="field" style="flex:1"><label>实时搜索（职位 / 公司 / 技能 / 标签）</label>
+        <input id="kw" placeholder="例如：Python、算法、外企…"></div>
+      <div class="field"><label>城市</label><select id="fCity"><option value="">全部</option></select></div>
+      <div class="field"><label>最低月薪(K)</label><input id="fSal" type="number" placeholder="不限" style="width:110px"></div>
+      <div class="field"><label>经验</label><select id="fExp"><option value="">全部</option></select></div>
+      <div class="field"><label>学历</label><select id="fDeg"><option value="">全部</option></select></div>
+      <div class="field"><label>排序</label><select id="sort">
+        <option value="default">默认</option><option value="salary">薪资 高→低</option>
+        <option value="new">新增优先</option><option value="title">职位名</option></select></div>
+      <div class="field"><label>仅新增</label><select id="fNew">
+        <option value="">全部</option><option value="1">仅 🆕 新增</option></select></div>
+      <button id="btnReset" class="ghost">重置</button>
+    </div>
+  </div>
+
+  <!-- 概览 -->
+  <div class="card">
+    <h2>概览 <span id="range" class="sub" style="text-transform:none"></span></h2>
+    <div class="grid2">
+      <div class="stats" id="stats"></div>
+      <div>
+        <div style="font-size:12px;color:var(--muted)">高频技能</div>
+        <div class="tags" id="skillTags"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 结果 -->
+  <div class="card">
+    <h2>岗位 <span id="count" class="sub" style="text-transform:none"></span></h2>
+    <div class="list" id="list"></div>
+  </div>
+
+  <!-- AI 问答：基于当前筛选结果提问 -->
+  <div class="card" id="aiCard">
+    <h2>AI 数据分析 <span id="aiScope" class="sub" style="text-transform:none"></span></h2>
+    <div class="chat" id="chat">
+      <div class="msg bot">我可以基于你<strong>当前筛选出的岗位</strong>回答问题。
+例如薪资分布、技能要求、经验门槛、值得优先投的岗位等。
+数据不足时我会直说，不会编。</div>
+    </div>
+    <div class="chips" id="askChips">
+      <span class="chip">这批岗位的薪资分布是怎样的？</span>
+      <span class="chip">最常要求的核心技能是什么？</span>
+      <span class="chip">经验和学历门槛如何？</span>
+      <span class="chip">帮我挑出 5 个最值得投的岗位并说明理由</span>
+      <span class="chip">我的简历该突出什么？</span>
+    </div>
+    <div class="askrow">
+      <input id="askInput" placeholder="针对当前筛选结果提问…">
+      <button id="btnAsk" class="primary">提问</button>
+      <button id="btnClearChat" class="ghost">清空</button>
+    </div>
+    <p class="note" id="aiNote"></p>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let ALL = [];            // 当前数据源的全部岗位
+let poller = null;
+
+/* ---------- 工具 ---------- */
+const esc = s => String(s??"").replace(/[&<>"']/g, c =>
+  ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+
+// 从 "25-50K·14薪" 里取月薪下限（K），取不到返回 null
+function salaryMin(s){
+  const m = String(s||"").match(/(\d+(?:\.\d+)?)\s*-?\s*(\d+(?:\.\d+)?)?\s*[Kk]/);
+  return m ? parseFloat(m[1]) : null;
+}
+const splitPipes = s => String(s||"").split("|").map(x=>x.trim()).filter(Boolean);
+// tags 形如 "1-3年 | 大专"，经验与学历混在同一字段，必须分别识别。
+// 注意：经验不能用 /不限/ 泛匹配——「学历不限」会被误判成经验。
+const DEGREE_RE = /(学历不限|初中及以下|中专\/中技|中专|中技|高中|大专|本科|硕士|博士)/;
+const EXP_RE = /^(经验不限|应届生?|在校生?|\d+\s*年以内|\d+-\d+年|\d+年以上|无经验)$/;
+
+const degreeOf = t => {
+  const m = String(t||"").match(DEGREE_RE);
+  return m ? m[1] : "";
+};
+const expOf = t => {
+  const parts = splitPipes(t);
+  const hit = parts.find(x => EXP_RE.test(x)) ||
+              parts.find(x => x.includes("年") && !DEGREE_RE.test(x));
+  return hit || "";
+};
+
+function hl(text, q){
+  const safe = esc(text);
+  if(!q) return safe;
+  const i = safe.toLowerCase().indexOf(q.toLowerCase());
+  if(i<0) return safe;
+  const n = q.length;
+  return safe.slice(0,i) + "<mark>" + safe.slice(i,i+n) + "</mark>" + safe.slice(i+n);
+}
+
+async function api(url, opts){
+  const r = await fetch(url, opts);
+  const body = await r.json().catch(()=>({error:"响应不是合法 JSON"}));
+  if(!r.ok) throw new Error(body.error || ("HTTP "+r.status));
+  return body;
+}
+
+/* ---------- 输入记忆（localStorage）---------- */
+// 记住上次的抓取参数、筛选条件、选中的结果文件，刷新/重开浏览器都不丢
+const STORE_KEY = "boss-dashboard:v1";
+// 需要记忆的字段：抓取区(sKw/sCity/sPages) + 筛选区(kw/fCity/fSal/fExp/sort/fNew)
+const PERSIST_FIELDS = ["sKw","sCity","sPages","sDetail","kw","fCity","fSal","fExp","fDeg","sort","fNew"];
+
+function loadPrefs(){
+  try{ return JSON.parse(localStorage.getItem(STORE_KEY) || "{}"); }
+  catch(e){ return {}; }   // 存储被禁用/损坏时静默降级，不影响主流程
+}
+
+function savePrefs(){
+  try{
+    const data = {};
+    PERSIST_FIELDS.forEach(id=>{
+      const el = $(id);
+      if(el) data[id] = el.value;
+    });
+    data.__file = $("fileSel").value || "";
+    localStorage.setItem(STORE_KEY, JSON.stringify(data));
+  }catch(e){ /* 隐私模式等场景写入失败，忽略即可 */ }
+}
+
+function applyPrefs(){
+  const data = loadPrefs();
+  const DYN_SELECTS = ["fCity","fExp","fDeg"];   // 选项由数据生成，需延后套用
+  PERSIST_FIELDS.forEach(id=>{
+    const el = $(id);
+    if(!el || typeof data[id] !== "string") return;
+    if(DYN_SELECTS.includes(id)){
+      if(data[id]) PENDING_SELECT[id] = data[id];
+      return;
+    }
+    if(data[id] !== "") el.value = data[id];
+  });
+  return data;
+}
+
+/* ---------- 状态 ---------- */
+async function loadStatus(){
+  try{
+    const s = await api("/api/status");
+    $("cdpDot").className = "dot " + (s.cdp_ready ? "on" : "wait");
+    $("cdpTxt").textContent = s.cdp_ready
+      ? `Chrome CDP 已就绪（127.0.0.1:${s.cdp_port}）` : "Chrome CDP 未启动";
+
+    $("cdpCard").className = "card " + (s.cdp_ready ? "ok" : "warn");
+    if(s.cdp_ready){
+      $("cdpTitle").textContent = "Chrome CDP 已就绪";
+      $("cdpDesc").textContent =
+        "可以直接拉取。若提示未登录或薪资为空，在那个 Chrome 窗口里登录 BOSS直聘后重试。";
+      $("btnChrome").classList.add("hide");
+      $("btnStopChrome").classList.remove("hide");
+      $("btnScrape").disabled = false;
+    }else{
+      $("cdpTitle").textContent = "Chrome CDP 未启动";
+      $("cdpDesc").innerHTML =
+        "抓取需要连接一个已登录 BOSS直聘的<b>专用 Chrome</b>。点右侧按钮会自动拉起它，"
+      + "然后在弹出的窗口里扫码登录（登录态会长期保存，只需做一次）。";
+      $("btnChrome").classList.remove("hide");
+      $("btnStopChrome").classList.add("hide");
+      $("btnScrape").disabled = true;   // 没 CDP 就不让点，直接给出可执行指引
+    }
+
+    if(!s.scraper_exists || !s.python_exists){
+      $("cdpDesc").innerHTML += " <b>未检测到 scraper 或虚拟环境</b>，请检查 " +
+        "<code>" + esc(s.repo) + "</code>。";
+    }
+  }catch(e){
+    $("cdpDot").className="dot off";
+    $("cdpTxt").textContent="后端未连接："+e.message;
+  }
+}
+
+/* ---------- 启动 / 关闭 Chrome ---------- */
+async function runChromeAction(btn, path, label){
+  const logBox = $("cdpLog");
+  logBox.classList.remove("hide");
+  logBox.textContent = label + "…\n";
+  btn.disabled = true;
+  try{
+    const {job} = await api(path, {method:"POST"});
+    const timer = setInterval(async ()=>{
+      try{
+        const st = await api("/api/scrape/log?job="+job);
+        logBox.textContent = st.log || (label + "…\n");
+        logBox.scrollTop = logBox.scrollHeight;
+        if(st.status!=="running" && st.status!=="pending"){
+          clearInterval(timer);
+          btn.disabled = false;
+          logBox.textContent += "\n\n（任务结束：" + st.status + "）";
+          await loadStatus();
+        }
+      }catch(e){
+        clearInterval(timer); btn.disabled=false;
+        logBox.textContent += "\n读取日志失败：" + e.message;
+      }
+    }, 1200);
+  }catch(e){
+    logBox.textContent = "启动失败：" + e.message;
+    btn.disabled = false;
+  }
+}
+
+/* ---------- 文件列表 ---------- */
+async function loadFiles(){
+  const {files} = await api("/api/files");
+  const sel = $("fileSel"), cur = sel.value;
+  sel.innerHTML = '<option value="">（选择历史结果）</option>' +
+    files.map(f=>{
+      const t = [f.keyword, f.city, f.total + " 条"].filter(Boolean).join(" · ");
+      return `<option value="${esc(f.name)}">${esc(f.name)}${t?" — "+esc(t):""}</option>`;
+    }).join("");
+  if(files.some(f=>f.name===cur)) sel.value = cur;
+  return files;
+}
+
+/* ---------- 拉取结果 ---------- */
+async function loadFile(name){
+  if(!name) return;
+  const data = await api("/api/jobs?file=" + encodeURIComponent(name));
+  ALL = Array.isArray(data.jobs) ? data.jobs : [];
+  $("range").textContent = data.keyword
+    ? `（${data.keyword} · ${data.city} · ${data.scraped_at ? data.scraped_at.replace("T"," ").slice(0,16) : ""}）` : "";
+  render();
+}
+
+/* ---------- 筛选 + 渲染 ---------- */
+function currentFilter(){
+  const q = $("kw").value.trim().toLowerCase();
+  const city = $("fCity").value, sal = parseFloat($("fSal").value), exp = $("fExp").value;
+  const deg = $("fDeg").value;
+  const onlyNew = $("fNew").value === "1";
+  let rows = ALL.filter(j=>{
+    if(city && !(j.location||"").includes(city)) return false;
+    if(!isNaN(sal)){ const s = salaryMin(j.salary); if(s===null || s<sal) return false; }
+    if(exp && expOf(j.tags) !== exp) return false;
+    if(deg && degreeOf(j.tags) !== deg) return false;
+    if(onlyNew && !j.is_new) return false;
+    if(q){
+      const hay = [j.title,j.boss_name,j.skills,j.job_labels,j.welfare,j.tags,
+                   j.location,j.company_industry,j.company_scale].join(" ").toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  const s = $("sort").value;
+  if(s==="salary") rows.sort((a,b)=>(salaryMin(b.salary)??-1)-(salaryMin(a.salary)??-1));
+  else if(s==="new")   rows.sort((a,b)=>(b.is_new?1:0)-(a.is_new?1:0));
+  else if(s==="title") rows.sort((a,b)=>String(a.title).localeCompare(String(b.title),"zh"));
+  return rows;
+}
+
+function render(){
+  const rows = currentFilter(), q = $("kw").value.trim();
+
+  // 统计
+  const s = rows.map(j=>salaryMin(j.salary)).filter(v=>v!==null);
+  const avg = s.length ? (s.reduce((a,b)=>a+b,0)/s.length).toFixed(1) : "—";
+  const med = s.length ? [...s].sort((a,b)=>a-b)[Math.floor(s.length/2)] : null;
+  const maxS = s.length ? Math.max(...s) : 0;
+  $("stats").innerHTML = `
+    <div class="stat"><b>${rows.length}</b><span>命中岗位</span></div>
+    <div class="stat"><b>${ALL.length}</b><span>数据源总数</span></div>
+    <div class="stat"><b>${avg}<small style="font-size:13px">K</small></b><span>月薪均值</span></div>
+    <div class="stat"><b>${med===null?"—":med+"K"}</b><span>月薪中位数</span></div>
+    <div class="stat"><b>${rows.filter(j=>j.is_new).length}</b><span>🆕 本轮新增</span></div>`;
+
+  // 高频技能
+  const freq = {};
+  rows.forEach(j=>splitPipes(j.skills).forEach(x=>freq[x]=(freq[x]||0)+1));
+  const top = Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,14);
+  $("skillTags").innerHTML = top.length
+    ? top.map(([k,n])=>`<span class="chip" data-s="${esc(k)}">${esc(k)} <b>${n}</b></span>`).join("")
+    : '<span class="sub">暂无</span>';
+
+  // 列表
+  $("count").textContent = `（${rows.length} / ${ALL.length}）`;
+  // AI 面板作用域：明确告诉用户「基于多少条、是否被截断」
+  $("aiScope").textContent = rows.length
+    ? `（基于当前 ${rows.length} 条筛选结果${rows.length>60?"，仅发送前 60 条":""}）` : "";
+  $("btnAsk").disabled = aiBusy || rows.length === 0;
+  $("list").innerHTML = rows.length ? rows.map(j=>{
+    const sMin = salaryMin(j.salary);
+    const welfare = splitPipes(j.welfare).slice(0,4);
+    const skills = splitPipes(j.skills).slice(0,8);
+    const co = [j.company_industry,j.company_scale,j.company_stage].filter(Boolean).join(" · ");
+    return `<div class="job">
+      <div class="job-top">
+        <div><h3>${j.is_new?'<span title="本轮新增">🆕</span> ':''}${hl(j.title,q)}</h3>
+          <div class="co">${hl(j.boss_name,q)}${co?` · ${esc(co)}`:""}</div></div>
+        <div class="sal">${esc(j.salary||"—")}
+          ${sMin!==null&&maxS?`<div class="bar" style="width:76px"><i style="width:${Math.round(sMin/maxS*100)}%"></i></div>`:""}
+        </div>
+      </div>
+      <div class="meta">
+        <span class="badge">📍 ${hl(j.location,q)}</span>
+        ${expOf(j.tags)?`<span class="badge">🎯 ${esc(expOf(j.tags))}</span>`:""}
+        ${degreeOf(j.tags)?`<span class="badge">🎓 ${esc(degreeOf(j.tags))}</span>`:""}
+        ${splitPipes(j.tags).filter(x=>x!==expOf(j.tags) && x!==degreeOf(j.tags)).map(x=>`<span class="badge">${hl(x,q)}</span>`).join("")}
+        ${j.boss_active_status?`<span class="badge">💬 ${esc(j.boss_active_status)}</span>`:""}
+      </div>
+      ${skills.length?`<div class="skills">${skills.map(x=>`<span class="skill" data-s="${esc(x)}">${hl(x,q)}</span>`).join("")}</div>`:""}
+      ${welfare.length?`<div class="meta"><span>🎁 ${welfare.map(x=>esc(x)).join("、")}</span></div>`:""}
+      ${(j.job_link||j.company_link)?`<div class="links">
+        ${j.job_link?`<a href="${esc(j.job_link)}" target="_blank" rel="noopener">职位详情 ↗</a>`:""}
+        ${j.company_link?`<a href="${esc(j.company_link)}" target="_blank" rel="noopener">公司主页 ↗</a>`:""}
+      </div>`:""}
+    </div>`;
+  }).join("") : '<div class="empty">没有匹配的岗位。试试清空筛选条件，或先点「开始拉取」。</div>';
+
+  // 筛选器选项
+  const cities = [...new Set(ALL.map(j=>String(j.location||"").split("·")[0].trim()).filter(Boolean))].sort();
+  const exps = [...new Set(ALL.map(j=>expOf(j.tags)).filter(Boolean))].sort();
+  // 学历按高低排序，而不是字典序（否则「本科」会排在「大专」后面）
+  const DEGREE_ORDER = ["初中及以下","高中","中专","中专/中技","中技","大专","本科","硕士","博士","学历不限"];
+  const degs = [...new Set(ALL.map(j=>degreeOf(j.tags)).filter(Boolean))]
+    .sort((a,b)=>{
+      const ia = DEGREE_ORDER.indexOf(a), ib = DEGREE_ORDER.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+  fillSelect("fCity", cities, "全部");
+  fillSelect("fExp", exps, "全部");
+  fillSelect("fDeg", degs, "全部");
+
+  // 选项建好后再套用刷新前记住的下拉值；套上后需要重算一次，否则列表还是旧的筛选结果
+  if(restorePendingSelects()){ render(); }
+}
+
+function fillSelect(id, values, allLabel){
+  const sel = $(id), cur = sel.value;
+  sel.innerHTML = `<option value="">${allLabel}</option>` +
+    values.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join("");
+  if(values.includes(cur)) sel.value = cur;
+}
+
+// 下拉框（城市/经验/学历）的选项是随数据动态生成的。
+// 刷新时 applyPrefs 先跑，那时 option 还不存在，赋值会失败并被浏览器丢弃。
+// 所以记住「待恢复的下拉值」，等 render() 把 option 建好后再套一次。
+let PENDING_SELECT = {};
+
+function restorePendingSelects(){
+  let touched = false;
+  Object.keys(PENDING_SELECT).forEach(id=>{
+    const el = $(id), want = PENDING_SELECT[id];
+    if(!el || !want) return;
+    // 只有选项真的存在才赋值，否则留着等下一轮
+    if([...el.options].some(o=>o.value === want)){
+      if(el.value !== want) el.value = want;
+      delete PENDING_SELECT[id];
+      touched = true;
+    }
+  });
+  return touched;
+}
+
+/* ---------- 拉取 ---------- */
+async function scrape(){
+  const btn = $("btnScrape");
+  btn.disabled = true; btn.textContent = "拉取中…";
+  $("logWrap").classList.remove("hide");
+  $("logBox").textContent = "";
+  try{
+    const {job} = await api("/api/scrape", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        keyword: $("sKw").value.trim(), city: $("sCity").value.trim(),
+        pages: $("sPages").value,
+        detail: $("sDetail").value === "1"
+      })
+    });
+    poller = setInterval(async ()=>{
+      try{
+        const st = await api("/api/scrape/log?job="+job);
+        $("logBox").textContent = st.log || "（等待输出…）";
+        $("logBox").scrollTop = $("logBox").scrollHeight;
+        if(st.status!=="running" && st.status!=="pending"){
+          clearInterval(poller); poller = null;
+          btn.disabled = false; btn.textContent = "开始拉取";
+          if(st.status==="ok" && st.file){
+            $("fileSel").value = st.file;
+            await loadFiles(); await loadFile(st.file);
+          }else{
+            $("logBox").textContent += "\n\n⚠ 任务未成功，请查看上方日志。";
+          }
+        }
+      }catch(e){ clearInterval(poller); poller=null;
+        btn.disabled=false; btn.textContent="开始拉取"; }
+    }, 1200);
+  }catch(e){
+    $("logBox").textContent = friendlyError(e.message);
+    btn.disabled = false; btn.textContent = "开始拉取";
+    await loadStatus();
+  }
+}
+
+// 把后端的可读错误翻译成人话，原始日志仍然保留在下方
+function friendlyError(msg){
+  if(/CDP 未启动/i.test(msg))
+    return "❌ Chrome CDP 未启动。\n\n请点击上方「启动 Chrome 并登录」，在弹出的浏览器里登录 BOSS直聘后再试。";
+  if(/非法的文件名/.test(msg)) return "❌ 文件名不合法。";
+  if(/关键词和城市/.test(msg))  return "❌ 请填写关键词和城市。";
+  return "❌ " + msg;
+}
+
+/* ---------- AI 问答 ---------- */
+let aiHistory = [];
+let aiBusy = false;
+
+function addMsg(text, cls){
+  const d = document.createElement("div");
+  d.className = "msg " + cls;
+  if(cls.includes("bot")) d.innerHTML = mdLite(text);
+  else d.textContent = text;              // 用户输入一律用 textContent
+  $("chat").appendChild(d);
+  $("chat").scrollTop = $("chat").scrollHeight;
+  return d;
+}
+
+// 极简 Markdown 渲染：先转义，再套标签 —— 模型输出不会被当 HTML 执行
+function mdLite(t){
+  let h = esc(t);
+  h = h.replace(/```[\s\S]*?```/g, m => "<pre>" + m + "</pre>");   // 代码块
+  h = h.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  h = h.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  h = h.replace(/^### (.*)$/gm, "<h4>$1</h4>").replace(/^## (.*)$/gm, "<h4>$1</h4>");
+  h = h.replace(/^[-*] (.*)$/gm, "• $1");
+  h = h.replace(/\n/g, "<br>");
+  return h;
+}
+
+async function ask(question){
+  if(aiBusy) return;
+  const rows = currentFilter();            // 关键：只把「当前筛选结果」交给模型
+  if(!rows.length){
+    $("aiNote").textContent = "当前没有匹配的岗位，请先拉取数据或放宽筛选条件。";
+    return;
+  }
+  const q = (question ?? $("askInput").value).trim();
+  if(!q) return;
+
+  aiBusy = true;
+  $("btnAsk").disabled = true;
+  $("aiNote").textContent = "";
+  addMsg(q, "user");
+  aiHistory.push({role:"user", content:q});
+  const thinking = addMsg("正在分析…", "bot");
+  $("askInput").value = "";
+
+  try{
+    const r = await api("/api/ask", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({question:q, jobs:rows.slice(0,60), history:aiHistory.slice(0,-1)})
+    });
+    thinking.innerHTML = mdLite(r.answer);
+    aiHistory.push({role:"assistant", content:r.answer});
+  }catch(e){
+    thinking.className = "msg err";
+    thinking.textContent = "提问失败：" + e.message;
+  }finally{
+    aiBusy = false;
+    $("btnAsk").disabled = false;
+    $("chat").scrollTop = $("chat").scrollHeight;
+  }
+}
+
+$("btnAsk").addEventListener("click", ()=>ask());
+$("askInput").addEventListener("keydown", e=>{ if(e.key==="Enter") ask(); });
+$("btnClearChat").addEventListener("click", ()=>{
+  aiHistory = [];
+  $("chat").innerHTML = '<div class="msg bot">已清空。换个问题问我吧。</div>';
+});
+$("askChips").addEventListener("click", e=>{
+  const t = e.target.closest(".chip");
+  if(t) ask(t.textContent.trim());
+});
+
+/* ---------- 事件 ---------- */
+
+["kw","fCity","fSal","fExp","fDeg","sort","fNew"].forEach(id=>
+  $(id).addEventListener("input", ()=>{ render(); savePrefs(); }));
+
+// 抓取参数改动也立即记下来（不需要等点击「开始拉取」）
+["sKw","sCity","sPages"].forEach(id=>
+  $(id).addEventListener("input", savePrefs));
+$("sDetail").addEventListener("change", savePrefs);
+
+$("btnReset").addEventListener("click", ()=>{
+  ["kw","fCity","fSal","fExp","fDeg","fNew"].forEach(id=>$(id).value="");
+  $("sort").value="default"; render(); savePrefs();
+});
+$("btnScrape").addEventListener("click", scrape);
+$("btnChrome").addEventListener("click", ()=>
+  runChromeAction($("btnChrome"), "/api/chrome/start", "正在启动专用 Chrome…"));
+$("btnStopChrome").addEventListener("click", ()=>
+  runChromeAction($("btnStopChrome"), "/api/chrome/stop", "正在关闭专用 Chrome…"));
+$("btnRefresh").addEventListener("click", async ()=>{ await loadFiles(); render(); });
+$("fileSel").addEventListener("change", e=>{
+  if(e.target.value){ loadFile(e.target.value); savePrefs(); }
+});
+
+// 技能 chip 点击 → 反填到搜索框
+document.addEventListener("click", e=>{
+  const t = e.target.closest("[data-s]");
+  if(t){ $("kw").value = t.dataset.s; render(); }
+});
+
+/* ---------- 启动 ---------- */
+(async function init(){
+  const prefs = applyPrefs();          // 先恢复上次的输入，再拉数据
+  await loadStatus();
+  try{
+    const files = await loadFiles();
+    // 优先恢复上次选中的结果文件；文件已被删除时回退到最新一份
+    const remembered = prefs.__file && files.some(f=>f.name===prefs.__file) ? prefs.__file : null;
+    if(remembered){
+      $("fileSel").value = remembered;
+      await loadFile(remembered);
+    }else if(files.length){
+      $("fileSel").value = files[0].name;
+      await loadFile(files[0].name);
+    }else{
+      render();
+    }
+  }catch(e){
+    $("list").innerHTML = '<div class="empty">加载失败：'+esc(e.message)+'</div>';
+    render();
+  }
+})();
+</script>
+</body>
+</html>
