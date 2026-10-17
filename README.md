@@ -1,6 +1,10 @@
 # BOSS 岗位看板
 
-给 [boss-zhipin-scraper](https://github.com/eatmoreduck/boss-zhipin-scraper) 做的本地可视化界面：一键拉取、实时筛选、结果看板。
+给 [boss-zhipin-scraper](https://github.com/Adrian0314/boss-zhipin-scraper) 做的本地可视化界面：一键拉取、实时筛选、结果看板。
+
+> **看板只是前端，抓取功能依赖另一个仓库 [boss-zhipin-scraper](https://github.com/Adrian0314/boss-zhipin-scraper)。**
+> 只下载本仓库可以浏览/筛选已有数据，但要真正抓取岗位，请按下面「安装」把它装上。
+> 必须用上面这个 fork ——「全职/兼职」和「按条数停止」依赖它新增的 `--job-type` / `--count` 参数，原版上游没有。
 
 ## 文件
 
@@ -11,13 +15,47 @@
 | `启动.bat` | 双击启动并自动开浏览器 |
 | `_e2e.py` / `_layout.py` / `_ai_test.py` / `_make_sample.py` | 开发期验证脚本，日常使用可删 |
 
-## 使用
+## 安装
 
-### 1. 启动看板
+需要 **Python 3.10+**（仅标准库，无需 pip 装任何东西到本仓库）。
 
-双击 `启动.bat`，浏览器自动打开 <http://127.0.0.1:8765>。关掉那个黑色命令行窗口即可停止服务。
+### 1. 下载看板
 
-### 2. 准备 Chrome 登录态（只需一次）
+```bash
+git clone https://github.com/Adrian0314/boss-dashboard.git
+cd boss-dashboard
+```
+
+### 2. 装 scraper（抓取必需）
+
+**Windows：**
+
+```bat
+git clone https://github.com/Adrian0314/boss-zhipin-scraper.git
+cd boss-zhipin-scraper
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+**macOS / Linux：**
+
+```bash
+git clone https://github.com/Adrian0314/boss-zhipin-scraper.git
+cd boss-zhipin-scraper
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 3. 启动看板
+
+回到 `boss-dashboard` 目录，双击 `启动.bat`（或 `python server.py`），浏览器自动打开 <http://127.0.0.1:8765>。关掉那个黑色命令行窗口即可停止服务。
+
+> **scraper 放哪都行**：后端会自动按「同级目录 → 上级目录 → 桌面/下载/文档 → `BDS_REPO` 环境变量」的顺序找它。找不到时页面顶部会直接给出上面这几条命令，照着执行再重启服务即可。
+> 放在同级目录（两个文件夹并排）最省事，往后升级 scraper 也方便。
+
+### 4. 准备 Chrome 登录态（只需一次）
 
 页面顶部会出现一张**黄色提示卡**：
 
@@ -29,7 +67,7 @@
 
 > 也可以手动执行：`python scripts\boss_cdp_raw.py --setup-chrome`
 
-### 3. 用
+### 5. 用
 
 - **一键拉取**：填关键词 / 城市 / **目标条数** → 点「开始拉取」。执行日志实时滚动，完成后自动加载本轮结果。
 - **全职/兼职**：抓取区可按用工类型过滤（全部/全职/兼职），由 BOSS 服务端过滤；结果带 job_type 字段，筛选区可二次筛选，卡片显示 🧕 徽章。
@@ -91,7 +129,7 @@ BDS_AI_MODEL=你的模型名
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `BDS_REPO` | `C:\Users\zheng\Desktop\boss-zhipin-scraper` | scraper 仓库路径 |
+| `BDS_REPO` | **自动探测** | scraper 仓库路径。留空时按同级/上级目录 → 桌面 → 下载 → 文档的顺序找 |
 | `BDS_RESULT_DIR` | `~/.boss-zhipin-scraper/job-result` | 抓取结果目录 |
 | `BDS_CDP_PORT` | `9222` | Chrome 调试端口 |
 | `BDS_PORT` | `8765` | 看板端口 |
@@ -106,6 +144,8 @@ BDS_AI_MODEL=你的模型名
 
 ## 已知限制
 
+- **必须先装 scraper**。只clone 本仓库时看板能打开、历史数据能看，但抓取按钮会禁用并在页面顶部给出安装命令 —— 这不是 bug，看板本来就只是 scraper 的前端。
 - **CDP 未启动时不能拉取**。页面顶部会显示红点并给出对应命令，但历史数据仍可正常浏览和筛选。
 - **拉取需要真实 Chrome 在跑**，且受 BOSS 风控影响；遇到 `_security_check` 需人工处理（scraper 不会自动绕过）。
+- **scraper 路径在启动时确定**。装完 scraper 后需要重启看板服务才会自动识别，刷新浏览器不够。
 - 请仅用于个人求职分析，控制频率，遵守 BOSS直聘用户协议。
