@@ -94,6 +94,11 @@
   .empty{color:var(--muted);text-align:center;padding:40px 0;font-size:14px}
   .note{color:var(--muted);font-size:12.5px;margin-top:10px;line-height:1.7}
   .note code{background:var(--panel2);padding:1px 6px;border-radius:4px;font-size:12px}
+  /* 安装引导里的命令块：等宽、可整段复制、可横向滚动不撑破卡片 */
+  pre.code{background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+    padding:12px 14px;margin:10px 0;overflow-x:auto;font-size:12.5px;line-height:1.8;
+    font-family:Consolas,"Cascadia Mono",Menlo,monospace;color:var(--text);
+    white-space:pre;user-select:all}
   .grid2{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;align-items:start}
   @media(max-width:820px){.grid2{grid-template-columns:1fr}}
   .hide{display:none}
@@ -457,9 +462,27 @@ async function loadStatus(){
       $("btnScrape").disabled = true;   // 没 CDP 就不让点，直接给出可执行指引
     }
 
-    if(!s.scraper_exists || !s.python_exists){
-      $("cdpDesc").innerHTML += " <b>未检测到 scraper 或虚拟环境</b>，请检查 " +
-        "<code>" + esc(s.repo) + "</code>。";
+    if(!s.scraper_exists){
+      // 看板只是前端，抓取依赖独立的 boss-zhipin-scraper。
+      // 直接把可复制的命令给出来，别让用户对着一个坏按钮发呆。
+      $("cdpCard").className = "card warn";
+      $("cdpDot").className = "dot off";
+      $("cdpTxt").textContent = "未安装 scraper";
+      $("cdpTitle").textContent = "还差一步：安装 boss-zhipin-scraper";
+      $("cdpDesc").innerHTML =
+        "看板本身已经跑起来了，但<b>抓取功能依赖另一个仓库</b> boss-zhipin-scraper。"
+      + "在命令行里执行下面几步（<code>boss-zhipin-scraper</code> 会放在本看板同级目录），"
+      + "完成后<b>重启本服务</b>即可自动识别："
+      + '<pre class="code">' + esc(s.install_hint || "") + "</pre>"
+      + '务必用 <a href="' + esc(s.repo_hint) + '" target="_blank" rel="noopener">'
+      + "Adrian0314/boss-zhipin-scraper</a> 这个版本——"
+      + "「全职/兼职」和「按条数停止」依赖它新增的参数，原版上游没有。";
+      $("btnChrome").classList.add("hide");
+      $("btnStopChrome").classList.add("hide");
+      $("btnScrape").disabled = true;
+    }else if(!s.python_exists){
+      $("cdpDesc").innerHTML += " <b>未检测到 scraper 的 Python 环境</b>，请检查 "
+        + "<code>" + esc(s.repo) + "</code> 下的依赖是否已安装。";
     }
   }catch(e){
     $("cdpDot").className="dot off";
