@@ -899,6 +899,18 @@ function salaryMin(s){
   return m ? parseFloat(m[1]) : null;
 }
 const splitPipes = s => String(s||"").split("|").map(x=>x.trim()).filter(Boolean);
+
+// 用工类型归一：早期抓取的结果文件里 job_type 可能是 BOSS 原始裸编码
+// （"5"/"6"），直接透传会让筛选下拉出现看不懂的「5」。这里做兜底映射，
+// 认不出的值返回空串——不展示比展示错误信息更好。
+const JOB_TYPE_MAP = {"0":"全职","4":"兼职","5":"实习","6":"兼职"};
+const JOB_TYPE_OK = ["全职","兼职","实习"];
+function jobTypeLabel(v){
+  const s = String(v ?? "").trim();
+  if(!s) return "";
+  if(JOB_TYPE_OK.includes(s)) return s;      // 已是可读值
+  return JOB_TYPE_MAP[s] || "";              // 裸编码 → 可读值；未知 → ""
+}
 // tags 形如 "1-3年 | 大专"，经验与学历混在同一字段，必须分别识别。
 // 注意：经验不能用 /不限/ 泛匹配——「学历不限」会被误判成经验。
 const DEGREE_RE = /(学历不限|初中及以下|中专\/中技|中专|中技|高中|大专|本科|硕士|博士)/;
@@ -1527,7 +1539,7 @@ function currentFilter(){
     if(!isNaN(sal)){ const s = salaryMin(j.salary); if(s===null || s<sal) return false; }
     if(exp && expOf(j.tags) !== exp) return false;
     if(deg && degreeOf(j.tags) !== deg) return false;
-    if(jt && (j.job_type || "") !== jt) return false;
+    if(jt && jobTypeLabel(j.job_type) !== jt) return false;
     if(onlyNew && !j.is_new) return false;
     if(q){
       const hay = [j.title,j.boss_name,j.skills,j.job_labels,j.welfare,j.tags,
@@ -1616,7 +1628,7 @@ function render(){
         <span class="badge">${icon("pin")}${hl(j.location,q)}</span>
         ${expOf(j.tags)?`<span class="badge">${icon("target")}${esc(expOf(j.tags))}</span>`:""}
         ${degreeOf(j.tags)?`<span class="badge">${icon("cap")}${esc(degreeOf(j.tags))}</span>`:""}
-        ${j.job_type?`<span class="badge">${icon("id")}${esc(j.job_type)}</span>`:""}
+        ${jobTypeLabel(j.job_type)?`<span class="badge">${icon("id")}${esc(jobTypeLabel(j.job_type))}</span>`:""}
         ${splitPipes(j.tags).filter(x=>x!==expOf(j.tags) && x!==degreeOf(j.tags)).map(x=>`<span class="badge">${hl(x,q)}</span>`).join("")}
         ${j.boss_active_status?`<span class="badge">${icon("chat")}${esc(j.boss_active_status)}</span>`:""}
       </div>
@@ -1653,8 +1665,9 @@ function render(){
 
   fillSelect("fExp", exps, "全部");
   fillSelect("fDeg", degs, "全部");
-  // 用工类型：只列出数据里真实出现过的类型（全职/兼职）
-  const jobTypes = [...new Set(ALL.map(j=>j.job_type).filter(Boolean))].sort();
+  // 用工类型：先经 jobTypeLabel 归一，裸编码不再进入下拉选项
+  const jobTypes = [...new Set(ALL.map(j=>jobTypeLabel(j.job_type)).filter(Boolean))]
+    .sort((a,b)=>JOB_TYPE_OK.indexOf(a) - JOB_TYPE_OK.indexOf(b));
   fillSelect("fJobType", jobTypes, "全部");
 
   // 选项建好后再套用刷新前记住的下拉值；套上后需要重算一次，否则列表还是旧的筛选结果
@@ -2061,9 +2074,13 @@ window.addEventListener("scroll", syncFab, {passive:true});
 window.addEventListener("resize", syncFab);
 setTimeout(syncFab, 300);   // 首屏数据加载后再同步一次
 
-// fCity 是 multiple select，改动由多选控件自己的 change 事件处理，不走这里
-["kw","fSal","fExp","fDeg","fJobType","sort","fNew"].forEach(id=>
+// fCity 是 multiple select，改动由多选控件自己的 change 事件处理，不走这里。
+// 下拉框必须监听 change 而不是 input：原生 select 用鼠标点选时只触发
+// change，input 只在键盘操作时触发 —— 只绑 input 会导致鼠标筛选完全不生效。
+["kw","fSal"].forEach(id=>
   $(id).addEventListener("input", ()=>{ render(); savePrefs(); }));
+["fExp","fDeg","fJobType","sort","fNew"].forEach(id=>
+  $(id).addEventListener("change", ()=>{ render(); savePrefs(); }));
 
 // 抓取参数改动也立即记下来（不需要等点击「开始拉取」）
 ["sKw","sCity","sCount"].forEach(id=>
