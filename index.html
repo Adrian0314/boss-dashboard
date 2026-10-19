@@ -513,6 +513,53 @@
   .btn-settings{display:inline-flex;align-items:center;gap:6px;
     padding:8px 14px;font-size:13px;min-height:36px;box-shadow:var(--shadow-1)}
   .btn-settings svg{width:14px;height:14px}
+
+  /* ============================================================
+     AI 数据源选择器
+     让 AI 不只分析「当前筛选」，也能直接分析任意一次历史抓取结果。
+     与顶部「一键拉取」的 fileSel 是两件事：那个决定看板显示什么，
+     这个决定送什么给模型。
+     ============================================================ */
+  .ai-source{display:flex;align-items:center;gap:var(--sp-2);
+    flex-wrap:wrap;margin-bottom:var(--sp-3)}
+  .ai-source > .lbl{font-size:11.5px;font-weight:700;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.06em}
+  .picker{position:relative;display:inline-flex;align-items:center;gap:7px;
+    background:var(--panel2);border:1px solid var(--line);color:var(--fg);
+    border-radius:var(--radius-sm);padding:7px 12px;font-family:inherit;
+    font-size:13px;min-height:36px;max-width:min(420px,100%);cursor:pointer;
+    box-shadow:none;transition:border-color var(--dur-fast) var(--ease-out),
+      background var(--dur-fast) var(--ease-out)}
+  .picker:hover{border-color:var(--primary);background:var(--panel);filter:none}
+  .picker .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-weight:600}
+  .picker .tagline{font-size:11.5px;color:var(--muted);font-weight:400;
+    white-space:nowrap}
+  .picker svg.caret{flex:none;opacity:.55;
+    transition:transform var(--dur) var(--ease-out)}
+  .picker[aria-expanded="true"] svg.caret{transform:rotate(180deg)}
+  .ai-source-menu{position:relative;z-index:55;width:100%;max-width:560px;
+    background:var(--panel);border:1px solid var(--line);
+    border-radius:var(--radius-sm);box-shadow:var(--shadow-pop);
+    max-height:320px;overflow-y:auto;padding:6px;
+    animation:pop-in var(--dur) var(--ease-spring);transform-origin:top left}
+  .src-opt{display:flex;align-items:center;gap:var(--sp-2);padding:9px 10px;
+    border-radius:7px;cursor:pointer;font-size:13px;
+    transition:background var(--dur-fast) var(--ease-out)}
+  .src-opt:hover{background:var(--panel2)}
+  .src-opt.active{background:color-mix(in srgb,var(--primary) 10%,transparent);
+    box-shadow:inset 3px 0 0 var(--primary);font-weight:600}
+  .src-opt .grow{flex:1;min-width:0}
+  .src-opt .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .src-opt .s{font-size:11.5px;color:var(--muted);margin-top:2px;
+    font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .src-opt .n{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums;
+    white-space:nowrap;flex:none}
+  .src-opt .check{flex:none;color:var(--primary);width:14px;height:14px}
+  .src-sep{border-top:1px solid var(--line);margin:6px 2px}
+  .src-head{font-size:11px;font-weight:700;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.06em;padding:4px 10px 6px}
+  .src-empty{font-size:12px;color:var(--muted);padding:10px}
 </style>
 </head>
 <body>
@@ -736,9 +783,32 @@
     <div class="list" id="list"></div>
   </div>
 
-  <!-- AI 问答：基于当前筛选结果提问 -->
+  <!-- AI 问答：数据源可选「当前筛选」或任意历史抓取结果 -->
   <div class="card" id="aiCard">
     <h2>AI 数据分析 <span id="aiScope" class="sub" style="text-transform:none"></span></h2>
+
+    <!-- 数据源选择：决定「送什么给模型」，与顶部决定看板显示的文件选择相互独立 -->
+    <div class="ai-source">
+      <span class="lbl">数据源</span>
+      <button class="picker" id="aiSrcPicker" aria-haspopup="listbox"
+              aria-expanded="false" title="选择要让 AI 分析的数据">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none"
+             stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true" style="flex:none;opacity:.7">
+          <path d="M2 3.2h12M2 8h12M2 12.8h8"/>
+        </svg>
+        <span class="name" id="aiSrcName">当前筛选结果</span>
+        <span class="tagline" id="aiSrcTag"></span>
+        <svg class="caret" viewBox="0 0 16 16" width="12" height="12" fill="none"
+             stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
+      </button>
+      <button class="ghost" id="btnAiSrcReload" title="重新读取历史数据列表">刷新</button>
+    </div>
+    <div class="ai-source" id="aiSrcMenuWrap" style="display:none">
+      <div class="ai-source-menu" id="aiSrcMenu" role="listbox"
+           aria-label="选择 AI 分析数据源"></div>
+    </div>
 
     <!-- 会话工具条：常驻显示当前会话，随时可切换 -->
     <div class="conv-bar">
@@ -753,7 +823,8 @@
     <div class="conv-list hide" id="convList"></div>
 
     <div class="chat" id="chat">
-      <div class="msg bot">我可以基于你<strong>当前筛选出的岗位</strong>回答问题。
+      <div class="msg bot">我可以基于<strong>你选择的数据源</strong>回答问题。
+默认分析「当前筛选结果」，也可以点上方「数据源」改成任意一次历史抓取结果。
 例如薪资分布、技能要求、经验门槛、值得优先投的岗位等。
 数据不足时我会直说，不会编。</div>
     </div>
@@ -953,6 +1024,144 @@ async function saveSettings(){
   }
 }
 
+/* ---------- AI 数据源选择 ----------
+   两件事分开：
+   - 顶部「一键拉取」的文件选择 → 决定看板显示/筛选哪份数据
+   - 这里的「数据源」       → 决定送什么数据给 AI 分析
+   默认跟随当前筛选；也可钉住某一份历史结果，方便回头对比不同批次。
+*/
+let AI_SRC = { mode: "current", file: "", jobs: [] };  // mode: current | history
+let aiSrcFiles = [];                                    // 历史文件列表缓存
+
+function aiSrcLabel(){
+  if(AI_SRC.mode === "current"){
+    const n = currentFilter().length;
+    return { name: "当前筛选结果", tag: n ? `${n} 条` : "暂无数据" };
+  }
+  const f = aiSrcFiles.find(x => x.name === AI_SRC.file);
+  const n = AI_SRC.jobs.length;
+  const desc = f ? [f.keyword, f.city].filter(Boolean).join(" · ") : "";
+  return { name: f ? f.name : AI_SRC.file, tag: desc || `${n} 条` };
+}
+
+// 本次提问实际要送给模型的岗位
+function aiRows(){
+  return AI_SRC.mode === "current" ? currentFilter() : AI_SRC.jobs;
+}
+
+function syncAiSrcBtn(){
+  const {name, tag} = aiSrcLabel();
+  $("aiSrcName").textContent = name;
+  $("aiSrcTag").textContent = tag ? `· ${tag}` : "";
+  const n = aiRows().length;
+  const scope = AI_SRC.mode === "current"
+    ? (n ? `（基于当前 ${n} 条筛选结果，全部发送）` : "")
+    : (n ? `（基于历史数据 ${n} 条，全部发送）` : "");
+  $("aiScope").textContent = scope;
+  $("btnAsk").disabled = aiBusy || n === 0;
+}
+
+async function refreshAiSrcFiles(){
+  try{
+    aiSrcFiles = (await api("/api/files")).files || [];
+    return aiSrcFiles;
+  }catch(e){
+    aiSrcFiles = [];
+    return [];
+  }
+}
+
+function renderAiSrcMenu(){
+  const box = $("aiSrcMenu");
+  const curN = currentFilter().length;
+  const histRows = aiSrcFiles.map(f=>{
+    const desc = [f.keyword, f.city].filter(Boolean).join(" · ");
+    const active = AI_SRC.mode === "history" && AI_SRC.file === f.name;
+    return `<div class="src-opt ${active?"active":""}" role="option"
+        aria-selected="${active}" data-file="${esc(f.name)}">
+      <div class="grow">
+        <div class="t">${esc(f.name)}</div>
+        <div class="s">${esc(desc)}${desc?" · ":""}${f.total||0} 条</div>
+      </div>
+      <span class="n">${f.total||0}</span>
+      ${active?`<svg class="check" viewBox="0 0 16 16" fill="none"
+        stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round"><path d="m3 8.5 3.2 3.2L13 5"/></svg>`:""}
+    </div>`;
+  }).join("");
+
+  box.innerHTML =
+    `<div class="src-head">跟随看板</div>
+     <div class="src-opt ${AI_SRC.mode==="current"?"active":""}" role="option"
+          aria-selected="${AI_SRC.mode==="current"}" data-mode="current">
+       <div class="grow">
+         <div class="t">当前筛选结果</div>
+         <div class="s">跟随上方筛选条件实时变化</div>
+       </div>
+       <span class="n">${curN}</span>
+       ${AI_SRC.mode==="current"?`<svg class="check" viewBox="0 0 16 16" fill="none"
+         stroke="currentColor" stroke-width="2" stroke-linecap="round"
+         stroke-linejoin="round"><path d="m3 8.5 3.2 3.2L13 5"/></svg>`:""}
+     </div>
+     <div class="src-sep"></div>
+     <div class="src-head">历史抓取结果</div>
+     ${histRows || '<div class="src-empty">还没有历史结果。先在上方拉取一次。</div>'}`;
+}
+
+async function openAiSrcMenu(){
+  await refreshAiSrcFiles();
+  renderAiSrcMenu();
+  $("aiSrcMenuWrap").style.display = "";
+  $("aiSrcPicker").setAttribute("aria-expanded", "true");
+}
+
+function closeAiSrcMenu(){
+  $("aiSrcMenuWrap").style.display = "none";
+  $("aiSrcPicker").setAttribute("aria-expanded", "false");
+}
+
+async function pickAiSource(mode, file){
+  if(mode === "current"){
+    AI_SRC = { mode: "current", file: "", jobs: [] };
+  }else{
+    try{
+      const data = await api("/api/jobs?file=" + encodeURIComponent(file));
+      AI_SRC = { mode: "history", file, jobs: Array.isArray(data.jobs) ? data.jobs : [] };
+    }catch(e){
+      $("aiNote").textContent = "读取历史数据失败：" + e.message;
+      return;
+    }
+  }
+  closeAiSrcMenu();
+  syncAiSrcBtn();
+  // 换了数据源就在聊天区留一条提示，避免用户以为还在分析上一批
+  const {name, tag} = aiSrcLabel();
+  addMsg(`数据源已切换为：${name}${tag?`（${tag}）`:""}`, "bot");
+}
+
+$("aiSrcPicker").addEventListener("click", e=>{
+  e.stopPropagation();
+  $("aiSrcMenuWrap").style.display === "none" ? openAiSrcMenu() : closeAiSrcMenu();
+});
+$("btnAiSrcReload").addEventListener("click", async e=>{
+  e.stopPropagation();
+  await refreshAiSrcFiles();
+  if($("aiSrcMenuWrap").style.display !== "none") renderAiSrcMenu();
+  syncAiSrcBtn();
+});
+$("aiSrcMenu").addEventListener("click", e=>{
+  const opt = e.target.closest(".src-opt");
+  if(!opt) return;
+  if(opt.dataset.mode === "current") pickAiSource("current");
+  else if(opt.dataset.file) pickAiSource("history", opt.dataset.file);
+});
+// 点其它地方关掉菜单
+document.addEventListener("click", e=>{
+  if($("aiSrcMenuWrap").style.display === "none") return;
+  if(e.target.closest("#aiSrcMenuWrap") || e.target.closest("#aiSrcPicker")) return;
+  closeAiSrcMenu();
+});
+
 /* ---------- 状态 ---------- */
 async function loadStatus(){
   try{
@@ -1118,6 +1327,8 @@ async function loadFiles(){
       return `<option value="${esc(f.name)}">${esc(f.name)}${t?" — "+esc(t):""}</option>`;
     }).join("");
   if(files.some(f=>f.name===cur)) sel.value = cur;
+  // 同一份列表也喂给 AI 数据源选择器，抓完新数据后不用手动刷新
+  aiSrcFiles = files;
   return files;
 }
 
@@ -1244,10 +1455,8 @@ function render(){
 
   // 列表
   $("count").textContent = `（${rows.length} / ${ALL.length}）`;
-  // AI 面板作用域：发送全部筛选结果，不再截断
-  $("aiScope").textContent = rows.length
-    ? `（基于当前 ${rows.length} 条筛选结果，全部发送）` : "";
-  $("btnAsk").disabled = aiBusy || rows.length === 0;
+  // AI 面板作用域与按钮状态统一由数据源选择器管理
+  syncAiSrcBtn();
   $("list").innerHTML = rows.length ? rows.map(j=>{
     const sMin = salaryMin(j.salary);
     const welfare = splitPipes(j.welfare).slice(0,4);
@@ -1522,9 +1731,12 @@ function mdLite(t){
 
 async function ask(question){
   if(aiBusy) return;
-  const rows = currentFilter();            // 关键：只把「当前筛选结果」交给模型
+  // 数据源可能是「当前筛选」也可能是钉住的历史结果，统一走 aiRows()
+  const rows = aiRows();
   if(!rows.length){
-    $("aiNote").textContent = "当前没有匹配的岗位，请先拉取数据或放宽筛选条件。";
+    $("aiNote").textContent = AI_SRC.mode === "current"
+      ? "当前没有匹配的岗位，请先拉取数据或放宽筛选条件。"
+      : "所选历史数据为空，请换一份或先拉取。";
     return;
   }
   const q = (question ?? $("askInput").value).trim();
@@ -1808,6 +2020,9 @@ document.addEventListener("click", e=>{
     $("list").innerHTML = '<div class="empty">加载失败：'+esc(e.message)+'</div>';
     render();
   }
+  // AI 数据源：默认跟随当前筛选，同时把历史文件列表预热好，点开即可选
+  await refreshAiSrcFiles();
+  syncAiSrcBtn();
 })();
 </script>
 </body>
