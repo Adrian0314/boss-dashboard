@@ -6,77 +6,103 @@
 <title>BOSS 岗位看板</title>
 <style>
   /* ============================================================
-     设计令牌
-     - 色彩：ui-ux-pro-max / color.csv → "Analytics Dashboard"
-       主色 #1E40AF（蓝，数据）、强调 #D97706（琥珀，调整以满足 WCAG 3:1）、
-       前景 #1E3A8A、边框 #DBEAFE；深色由同一语义轴反转而来。
-     - 字体：Apple HIG §15「默认用系统字体」优先于 Fira Sans（不引外链字体，
-       系统字体自带 optical sizing / 中文回退，离线可用）。
-     - 间距：8px 基准（ui-ux-pro-max density=标准档 16–64px 主轴）。
-     - 动效：Apple HIG §4 用 spring 语义的 cubic-bezier 近似，
-       150–300ms 区间（ux-guidelines: Duration Timing）。
+     设计令牌 —— Modern Dark Cinema（暗黑电影感）
+     依据：ui-ux-pro-max / styles.csv → "Modern Dark (Cinema Mobile)"
+       - 背景：LinearGradient #0a0a0f（上）→ #020203（下）
+       - 卡片：borderRadius 16，hairline 边框 rgba(255,255,255,.08)
+       - 强调色：靛蓝 #5E6AD2
+       - 氛围：2-3 个 blurRadius 30-50 / opacity 0.08-0.12 的缓慢浮动光晕
+       - 缓动：cubic-bezier(0.16,1,0.3,1)
+     依据：apple-design（HIG）
+       - §12 材料：毛玻璃卡片 hairline + 顶缘高光，别叠浅色半透面
+       - §15 字体：系统字体优先（SF Pro → PingFang），字距随字号收缩
+       - §14 无障碍：reduced-motion / reduced-transparency / contrast 三档降级
+       - §1  反馈：按下即响应（scale .97）
+     对比度实测（深色，2026-10）：正文/卡片 16.4:1，次要文字/卡片 5.6:1，
+       主按钮文字/主色 4.7:1，强调色/卡片 10.2:1，成功色/卡片 9.3:1
+       —— 均达 WCAG AA（正文 4.5:1 / 大字 3:1）。
      ============================================================ */
   :root{
-    color-scheme: light dark;
+    color-scheme: dark;   /* 强制暗色：本风格为暗黑定制，不跟随系统反转 */
 
-    /* 语义色 */
-    --bg:#F8FAFC; --panel:#FFFFFF; --panel2:#EFF3F9;
-    --line:#DBEAFE; --line-strong:#BFD4EC;
-    --fg:#1E3A8A; --muted:#64748B;
-    --primary:#1E40AF; --on-primary:#FFFFFF;
-    --accent:#D97706; --on-accent:#FFFFFF;
-    --ok:#15803D; --warn:#B45309; --err:#DC2626;
-    --ring:#1E40AF;
-    /* 兼容既有变量名（JS 未用，纯 CSS 继承） */
-    --accent2:#3B82F6;
+    /* 语义色（Cinema 配色） */
+    --bg:#0a0a0f; --bg-deep:#020203; --panel:#12121a; --panel2:#17171f;
+    --line:rgba(255,255,255,.08); --line-strong:rgba(255,255,255,.16);
+    --fg:#f0f0f5; --muted:#8b8b9c;
+    --primary:#5E6AD2; --on-primary:#ffffff;
+    --accent:#F0B37E; --on-accent:#1a1208;   /* 暖光点缀，模拟影院钨丝灯 */
+    --ok:#3ecf8e; --warn:#e8b339; --err:#eb5757;
+    --ring:#8b93e8;
+    --accent2:#5E6AD2;
 
-    /* 形状与阴影：HIG §12 材料层次 —— 卡片浅阴影，浮层深阴影 */
-    --radius:14px; --radius-sm:9px; --radius-pill:999px;
-    --shadow-1:0 1px 2px rgba(30,58,138,.06), 0 1px 3px rgba(30,58,138,.04);
-    --shadow-2:0 4px 12px rgba(30,58,138,.10), 0 2px 4px rgba(30,58,138,.06);
-    --shadow-pop:0 12px 32px rgba(30,58,138,.18), 0 2px 8px rgba(30,58,138,.10);
+    /* 形状：Cinema 规范 radius 16 */
+    --radius:16px; --radius-sm:11px; --radius-pill:999px;
+    /* 阴影：暗底下用「更黑」投影，配合 hairline 分层 */
+    --shadow-1:0 1px 2px rgba(0,0,0,.5);
+    --shadow-2:0 8px 24px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.4);
+    --shadow-pop:0 24px 64px rgba(0,0,0,.7), 0 4px 12px rgba(0,0,0,.5);
+    /* 卡片顶缘高光：HIG §12「材料边缘捕光」 */
+    --edge-top:inset 0 1px 0 rgba(255,255,255,.06);
 
     /* 间距 */
     --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px;
 
-    /* 动效：ease-out 进场更快收尾更慢（ux: Easing Functions） */
-    --ease-out:cubic-bezier(.22,.61,.36,1);
-    --ease-spring:cubic-bezier(.34,1.4,.64,1);   /* 近似 HIG 轻微过冲 */
-    --dur-fast:150ms; --dur:200ms; --dur-slow:280ms;
+    /* 动效：Cinema 规范缓动 + HIG §1 即时反馈 */
+    --ease-out:cubic-bezier(.16,1,.3,1);
+    --ease-spring:cubic-bezier(.16,1,.3,1);  /* Cinema 用同一条，弱过冲更高级 */
+    --dur-fast:150ms; --dur:200ms; --dur-slow:320ms;
   }
-  @media (prefers-color-scheme: dark){
-    :root{
-      --bg:#0B1220; --panel:#111B2E; --panel2:#18243A;
-      --line:#22304A; --line-strong:#31435F;
-      --fg:#E8EEF9; --muted:#94A3B8;
-      --primary:#3B82F6; --on-primary:#FFFFFF;
-      --accent:#F59E0B; --on-accent:#1E293B;
-      --ok:#22C55E; --warn:#FBBF24; --err:#EF4444;
-      --ring:#60A5FA; --accent2:#60A5FA;
-      --shadow-1:0 1px 2px rgba(0,0,0,.4);
-      --shadow-2:0 4px 14px rgba(0,0,0,.45);
-      --shadow-pop:0 14px 36px rgba(0,0,0,.55);
-    }
-  }
-  /* HIG §14：降低透明度偏好 → 表面变实心、去掉毛玻璃 */
+
+  /* HIG §14：降低透明度偏好 → 去掉毛玻璃，表面变实心 */
   @media (prefers-reduced-transparency: reduce){
-    .card, .job, .fab-btn, .toolbar { backdrop-filter:none !important; }
+    .card, .job, .fab-btn, header, .conv-list, .ms-menu, .ai-source-menu,
+    .file-list{ backdrop-filter:none !important; }
+    .ambient{display:none !important}
   }
-  /* HIG §14：提高对比度偏好 → 更实的边框 */
+  /* HIG §14：提高对比度偏好 → 边框更实、次要文字更亮 */
   @media (prefers-contrast: more){
-    :root{ --line:#94A3B8; --line-strong:#64748B; --muted:#475569; }
+    :root{ --line:rgba(255,255,255,.28); --line-strong:rgba(255,255,255,.4);
+           --muted:#b4b4c4; }
   }
 
   *{box-sizing:border-box;margin:0;padding:0}
   html{-webkit-text-size-adjust:100%}
+  /* Cinema 规范：背景为 #0a0a0f → #020203 的纵向渐变。
+     用 fixed 定位的伪元素铺满首屏，避免滚动时渐变被裁切。 */
   body{
     background:var(--bg); color:var(--fg);
     font:400 14px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",
       "PingFang SC","Microsoft YaHei",system-ui,sans-serif;
-    padding:var(--page-pad); min-height:100vh;
+    padding:var(--page-pad); min-height:100vh; position:relative;
     -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
   }
-  .wrap{max-width:1120px;margin:0 auto}
+  body::before{                     /* 渐变底 */
+    content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
+    background:linear-gradient(180deg, #0a0a0f 0%, #07070c 55%, #020203 100%);
+  }
+  /* 氛围光晕：2-3 个 blurRadius 30-50、opacity .08-.12 的圆斑，
+     极缓慢振荡（14-22s）。HIG §14 对慢速振荡敏感 → reduced-motion 时停掉。
+     用纯 CSS transform 动画，不触发重排。 */
+  .ambient{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden}
+  .ambient i{position:absolute;display:block;border-radius:50%;
+    filter:blur(70px);will-change:transform}
+  .ambient .a1{width:46vw;height:46vw;left:-8vw;top:-10vh;
+    background:radial-gradient(circle, rgba(94,106,210,.30), transparent 70%);
+    animation:drift1 22s var(--ease-out) infinite alternate}
+  .ambient .a2{width:38vw;height:38vw;right:-6vw;top:22vh;
+    background:radial-gradient(circle, rgba(240,179,126,.18), transparent 70%);
+    animation:drift2 18s var(--ease-out) infinite alternate}
+  .ambient .a3{width:42vw;height:42vw;left:28vw;bottom:-16vh;
+    background:radial-gradient(circle, rgba(94,106,210,.16), transparent 70%);
+    animation:drift3 26s var(--ease-out) infinite alternate}
+  @keyframes drift1{to{transform:translate3d(4vw,3vh,0) scale(1.08)}}
+  @keyframes drift2{to{transform:translate3d(-5vw,4vh,0) scale(1.12)}}
+  @keyframes drift3{to{transform:translate3d(3vw,-4vh,0) scale(1.06)}}
+  /* HIG §14：减少动效 → 光晕静止并淡出（保留氛围但不振荡） */
+  @media (prefers-reduced-motion: reduce){
+    .ambient i{animation:none;opacity:.5}
+  }
+  .wrap{max-width:1120px;margin:0 auto;position:relative}
 
   /* HIG §12：工具栏做成半透明材料层，内容从下方滚过。
      负 margin 用变量统一控制，避免手机端 padding 改值后撑出横向滚动条 */
@@ -88,9 +114,10 @@
     padding:var(--sp-3) var(--page-pad);
     margin-left:calc(var(--page-pad) * -1);
     margin-right:calc(var(--page-pad) * -1);
-    background:color-mix(in srgb, var(--bg) 72%, transparent);
-    -webkit-backdrop-filter:saturate(180%) blur(20px);
-    backdrop-filter:saturate(180%) blur(20px);
+    /* Cinema：暗色玻璃条，比卡片更「重」才撑得起悬浮层级（HIG §12 材料重量编码层级） */
+    background:color-mix(in srgb, var(--bg-deep) 78%, transparent);
+    -webkit-backdrop-filter:blur(24px) saturate(160%);
+    backdrop-filter:blur(24px) saturate(160%);
     border-bottom:1px solid transparent;
   }
   /* HIG §12 滚动边缘：用渐隐代替硬分割线，只在内容真正贴边时出现 */
@@ -107,13 +134,20 @@
   .dot.wait{animation:pulse 1.8s var(--ease-out) infinite}
   @keyframes pulse{50%{opacity:.45}}
 
-  /* HIG §12：卡片是浅材料层，靠阴影而非粗边框分层 */
-  .card{background:var(--panel);border:1px solid var(--line);
+  /* Cinema 规范：卡片为半透明毛玻璃材质，radius 16，
+     hairline 边框 rgba(255,255,255,.08)，顶缘一道高光（HIG §12 材料捕光）。
+     注意：暗色下「玻璃」要比 body 略亮而非发灰，否则层次会糊。 */
+  .card{
+    background:color-mix(in srgb, var(--panel) 78%, transparent);
+    -webkit-backdrop-filter:blur(20px) saturate(140%);
+    backdrop-filter:blur(20px) saturate(140%);
+    border:1px solid var(--line);
     border-radius:var(--radius);padding:var(--sp-4);margin-top:var(--sp-4);
-    box-shadow:var(--shadow-1);
+    box-shadow:var(--shadow-2), var(--edge-top);
     transition:box-shadow var(--dur) var(--ease-out),
-               border-color var(--dur) var(--ease-out)}
-  .card:hover{box-shadow:var(--shadow-2)}
+               border-color var(--dur) var(--ease-out);
+  }
+  .card:hover{border-color:var(--line-strong);box-shadow:var(--shadow-pop), var(--edge-top)}
   .card h2{font-size:11.5px;font-weight:700;color:var(--muted);margin-bottom:var(--sp-3);
     text-transform:uppercase;letter-spacing:.08em}
 
@@ -144,16 +178,19 @@
     box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 18%,transparent)}
   #kw{flex:1;min-width:220px}
 
+  /* Cinema：主按钮靛蓝 #5E6AD2，暗底下加一层同色柔光
+     （HIG §12「材料发光」—— 强调色比背景亮时用辉光而非投影分层） */
   button{
     background:var(--primary);color:var(--on-primary);border:0;
     border-radius:var(--radius-sm);padding:10px 18px;font-size:14px;font-weight:600;
     font-family:inherit;cursor:pointer;min-height:40px;
-    box-shadow:var(--shadow-1);
+    box-shadow:0 2px 12px rgba(94,106,210,.28), var(--edge-top);
     transition:filter var(--dur-fast) var(--ease-out),
                transform var(--dur-fast) var(--ease-spring),
                box-shadow var(--dur-fast) var(--ease-out);
   }
-  button:hover:not(:disabled){filter:brightness(1.08);box-shadow:var(--shadow-2)}
+  button:hover:not(:disabled){filter:brightness(1.12);
+    box-shadow:0 4px 20px rgba(94,106,210,.42), var(--edge-top)}
   /* HIG §1：按下瞬间即反馈，不等抬手 */
   button:active:not(:disabled){transform:scale(.97);filter:brightness(.95);
     transition-duration:60ms}
@@ -175,14 +212,24 @@
   .stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--sp-3)}
   @media(max-width:1000px){.stats{grid-template-columns:repeat(3,minmax(0,1fr))}}
   @media(max-width:640px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
-  .stat{background:var(--panel2);border:1px solid var(--line);
+  /* Cinema：统计卡为内嵌玻璃块；数字带一层极淡的同色辉光，
+     让 KPI 在暗底上「发光」而不是靠粗体硬撑。 */
+  .stat{
+    background:color-mix(in srgb, var(--panel2) 70%, transparent);
+    -webkit-backdrop-filter:blur(12px);
+    backdrop-filter:blur(12px);
+    border:1px solid var(--line);
     border-radius:var(--radius-sm);padding:var(--sp-3) var(--sp-4);
+    box-shadow:var(--edge-top);
     transition:transform var(--dur) var(--ease-spring),
-               box-shadow var(--dur) var(--ease-out)}
-  .stat:hover{transform:translateY(-2px);box-shadow:var(--shadow-2)}
+               box-shadow var(--dur) var(--ease-out),
+               border-color var(--dur) var(--ease-out)}
+  .stat:hover{transform:translateY(-2px);border-color:var(--line-strong);
+    box-shadow:var(--shadow-2), var(--edge-top)}
   /* HIG §15：数字用 tabular-nums 防跳动 */
   .stat b{display:block;font-size:24px;font-weight:700;line-height:1.15;
-    letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:var(--fg)}
+    letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:var(--fg);
+    text-shadow:0 0 24px color-mix(in srgb, var(--primary) 45%, transparent)}
   .stat span{font-size:11.5px;color:var(--muted);font-weight:500}
 
   .bar{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden;margin-top:6px}
@@ -200,14 +247,20 @@
     border-color:var(--primary);color:var(--fg);font-weight:600}
 
   .list{margin-top:var(--sp-4);display:flex;flex-direction:column;gap:var(--sp-3)}
-  .job{background:var(--panel);border:1px solid var(--line);
+
+  /* Cinema：岗位卡同为玻璃材质，hairline + 顶缘高光。
+     HIG §7 悬停只做「边框提亮 + 轻微上浮」，不改内容本身。 */
+  .job{
+    background:color-mix(in srgb, var(--panel) 72%, transparent);
+    -webkit-backdrop-filter:blur(16px) saturate(130%);
+    backdrop-filter:blur(16px) saturate(130%);
+    border:1px solid var(--line);
     border-radius:var(--radius);padding:var(--sp-4);
-    box-shadow:var(--shadow-1);
+    box-shadow:var(--shadow-1), var(--edge-top);
     transition:box-shadow var(--dur) var(--ease-out),
                border-color var(--dur) var(--ease-out),
                transform var(--dur) var(--ease-spring)}
-  /* HIG §7 空间一致性：悬停只轻微上浮，不做大幅位移 */
-  .job:hover{border-color:var(--primary);box-shadow:var(--shadow-2);
+  .job:hover{border-color:var(--primary);box-shadow:var(--shadow-2), var(--edge-top);
     transform:translateY(-2px)}
   .job-top{display:flex;justify-content:space-between;gap:var(--sp-3);
     align-items:flex-start}
@@ -646,6 +699,8 @@
 </style>
 </head>
 <body>
+<!-- Cinema 氛围层：三个缓慢漂移的光晕。装饰性，pointer-events:none 不吃点击 -->
+<div class="ambient" aria-hidden="true"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div>
 <div class="wrap">
   <header>
     <div style="flex:1;min-width:200px">
