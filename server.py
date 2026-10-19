@@ -272,6 +272,36 @@ def resolve_file(name):
     return path
 
 
+def delete_files(names):
+    """删除若干结果文件，返回 (删除成功的列表, 失败原因列表)。
+
+    安全约束：
+      - 逐个走 resolve_file()，文件名必须匹配白名单且位于结果目录内，
+        杜绝 ../ 之类的路径穿越把任意文件删掉。
+      - 数量上限 200，防止一次请求把整个目录端掉。
+      - 只删 .json，不碰其它任何文件类型。
+    """
+    ok, bad = [], []
+    if not isinstance(names, list):
+        return ok, ["请求格式错误：files 必须是数组"]
+    for name in names[:200]:
+        if not isinstance(name, str):
+            bad.append("<非字符串>")
+            continue
+        path = resolve_file(name)
+        if not path:
+            bad.append(f"{name}（文件名不合法）")
+            continue
+        try:
+            os.remove(path)
+            ok.append(name)
+        except FileNotFoundError:
+            bad.append(f"{name}（已不存在）")
+        except OSError as e:
+            bad.append(f"{name}（{e.strerror or e}）")
+    return ok, bad
+
+
 def _split_pipes(text):
     return [x.strip() for x in str(text or "").split("|") if x.strip()]
 
@@ -791,6 +821,23 @@ class Handler(BaseHTTPRequestHandler):
             # 重新载入内存配置，让改动立即生效（不必重启服务）
             reload_settings()
             return self._send(200, self._settings_public())
+
+        # ---- 删除历史结果文件（单个 / 批量）----
+        if parsed.path == "/api/files/delete":
+            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                payload = json.loads(self.rfile.read(length) or b"{}")
+            except (json.JSONDecodeError, ValueError):
+                return self._err(400, "请求体不是合法 JSON")
+            names = payload.get("files")
+            if not isinstance(names, list) or not names:
+                return self._err(400, "请提供要删除的文件名列表")
+            if len(names) > 200:
+                return self._err(400, "一次最多删除 200 个文件")
+
+            deleted, failed = delete_files(names)
+            code = 200 if deleted or not failed else 400
+            return self._send(code, {"deleted": deleted, "failed": failed})
 
         # ---- Chrome / 登录态管理 ----
         if parsed.path in ("/api/chrome/start", "/api/chrome/stop", "/api/chrome/check"):
