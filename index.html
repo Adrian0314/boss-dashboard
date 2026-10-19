@@ -592,6 +592,57 @@
   .src-count{flex:none;font-size:11px;font-weight:700;color:var(--on-primary);
     background:var(--primary);border-radius:var(--radius-pill);
     padding:1px 7px;line-height:1.6}
+
+  /* ============================================================
+     历史结果文件管理：单个删除 + 批量勾选删除
+     原生 select 不便多选，这里用自建列表：每行一个复选框 + 删除按钮，
+     勾选后底部出现批量操作条。
+     ============================================================ */
+  .file-panel{position:relative;flex:1;min-width:240px}
+  .file-picker{display:flex;align-items:center;gap:var(--sp-2);width:100%}
+  .file-picker select{flex:1;min-width:0}
+  .btn-icon{width:36px;height:36px;min-height:36px;padding:0;flex:none;
+    border-radius:var(--radius-sm);background:var(--panel2);
+    border:1px solid var(--line);color:var(--muted);
+    display:flex;align-items:center;justify-content:center;box-shadow:none}
+  .btn-icon:hover:not(:disabled){background:var(--panel);border-color:var(--err);
+    color:var(--err);filter:none}
+  .btn-icon:disabled{opacity:.4}
+  .btn-icon svg{width:15px;height:15px}
+  .btn-icon.danger:hover:not(:disabled){background:color-mix(in srgb,var(--err) 12%,transparent)}
+
+  .file-list{border:1px solid var(--line);border-radius:var(--radius-sm);
+    background:var(--panel);max-height:320px;overflow-y:auto;
+    box-shadow:var(--shadow-pop);animation:pop-in var(--dur) var(--ease-spring);
+    transform-origin:top left}
+  .file-row{display:flex;align-items:center;gap:var(--sp-2);padding:8px 10px;
+    border-bottom:1px solid var(--line);cursor:pointer;font-size:12.5px;
+    transition:background var(--dur-fast) var(--ease-out)}
+  .file-row:last-child{border-bottom:0}
+  .file-row:hover{background:var(--panel2)}
+  .file-row.on{background:color-mix(in srgb,var(--primary) 8%,transparent)}
+  .file-row .grow{flex:1;min-width:0}
+  .file-row .fn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-variant-numeric:tabular-nums}
+  .file-row .fs{font-size:11px;color:var(--muted);margin-top:1px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .file-row.cur .fn{color:var(--primary);font-weight:650}
+  .file-row .cb{flex:none;width:16px;height:16px;border-radius:4px;
+    border:1.5px solid var(--line-strong);background:var(--panel2);
+    display:flex;align-items:center;justify-content:center;
+    transition:background var(--dur-fast) var(--ease-out),
+               border-color var(--dur-fast) var(--ease-out)}
+  .file-row.on .cb{background:var(--primary);border-color:var(--primary)}
+  .file-row .cb svg{width:11px;height:11px;color:#fff;opacity:0;
+    transition:opacity var(--dur-fast) var(--ease-out)}
+  .file-row.on .cb svg{opacity:1}
+  .file-foot{display:flex;align-items:center;gap:var(--sp-2);padding:8px 10px;
+    border-top:1px solid var(--line);position:sticky;bottom:0;background:var(--panel)}
+  .file-foot .sum{flex:1;font-size:11.5px;color:var(--muted);
+    font-variant-numeric:tabular-nums;line-height:1.4}
+  .file-foot .sum b{color:var(--fg);font-weight:650}
+  .btn-danger{background:var(--err);color:#fff}
+  .btn-danger:hover:not(:disabled){filter:brightness(1.08)}
 </style>
 </head>
 <body>
@@ -740,8 +791,20 @@
       </div>
       <button id="btnScrape">开始拉取</button>
       <button id="btnRefresh" class="ghost">刷新列表</button>
-      <div class="field" style="flex:1;min-width:180px">
-        <label>或选择已有结果文件</label><select id="fileSel"></select>
+      <div class="field file-panel">
+        <label>或选择已有结果文件</label>
+        <div class="file-picker">
+          <select id="fileSel"></select>
+          <button id="btnFileMgr" class="btn-icon" title="管理历史结果（可删除）"
+                  aria-label="管理历史结果" aria-expanded="false">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+                 stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+                 aria-hidden="true">
+              <path d="M2.5 4.5h11M6.5 4.5V3.2h3v1.3M4 4.5l.6 8.2h6.8l.6-8.2"/>
+            </svg>
+          </button>
+        </div>
+        <div class="file-list hide" id="fileList"></div>
       </div>
     </div>
     <!-- 抓取进度：默认只给进度条 + 阶段文字；原始日志在设置里开启后才出现 -->
@@ -1475,15 +1538,119 @@ async function runChromeAction(btn, path, label){
 async function loadFiles(){
   const {files} = await api("/api/files");
   const sel = $("fileSel"), cur = sel.value;
+  // total 可能缺失（旧文件/详情文件），拼标签前先兜底成空串，
+  // 否则下拉里会出现「undefined 条」
+  const label = f => {
+    const parts = [f.keyword, f.city,
+      (f.total !== undefined && f.total !== null) ? f.total + " 条" : ""];
+    return parts.filter(Boolean).join(" · ");
+  };
   sel.innerHTML = '<option value="">（选择历史结果）</option>' +
     files.map(f=>{
-      const t = [f.keyword, f.city, f.total + " 条"].filter(Boolean).join(" · ");
+      const t = label(f);
       return `<option value="${esc(f.name)}">${esc(f.name)}${t?" — "+esc(t):""}</option>`;
     }).join("");
   if(files.some(f=>f.name===cur)) sel.value = cur;
   // 同一份列表也喂给 AI 数据源选择器，抓完新数据后不用手动刷新
   aiSrcFiles = files;
+  renderFileList();
   return files;
+}
+
+/* ---------- 历史结果文件管理（单个 / 批量删除） ---------- */
+let filePicked = new Set();     // 勾选待删除的文件名
+
+function renderFileList(){
+  const box = $("fileList");
+  if(box.classList.contains("hide")) return;
+  const cur = $("fileSel").value;
+  if(!aiSrcFiles.length){
+    box.innerHTML = '<div class="file-foot"><span class="sum">还没有历史结果</span></div>';
+    return;
+  }
+  const rows = aiSrcFiles.map(f=>{
+    const on = filePicked.has(f.name);
+    const desc = [f.keyword, f.city,
+      (f.total !== undefined && f.total !== null) ? f.total + " 条" : "条数未知"]
+      .filter(Boolean).join(" · ");
+    return `<div class="file-row ${on?"on":""} ${f.name===cur?"cur":""}"
+        role="checkbox" aria-checked="${on}" data-file="${esc(f.name)}">
+      <span class="cb"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+        stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"
+        aria-hidden="true"><path d="m3 8.5 3.2 3.2L13 5"/></svg></span>
+      <div class="grow">
+        <div class="fn">${esc(f.name)}</div>
+        <div class="fs">${esc(desc)}</div>
+      </div>
+      <button class="btn-icon danger" data-del="${esc(f.name)}"
+              title="删除这一个" aria-label="删除 ${esc(f.name)}">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8h5.8l.6-8"/>
+        </svg>
+      </button>
+    </div>`;
+  }).join("");
+
+  const n = filePicked.size;
+  const kb = n ? [...filePicked].reduce((s,x)=>{
+    const f = aiSrcFiles.find(v=>v.name===x);
+    return s + ((f && f.total) || 0);
+  }, 0) : 0;
+  box.innerHTML = rows + `<div class="file-foot">
+      <span class="sum">${n ? `已选 <b>${n}</b> 份 · 约 <b>${kb}</b> 条` : "勾选可批量删除"}</span>
+      <button class="src-mini" data-act="sel-all">全选</button>
+      <button class="src-mini" data-act="sel-none">取消选择</button>
+      <button class="btn-danger" data-act="del-picked" ${n?"":"disabled"}
+              style="min-height:32px;padding:5px 12px;font-size:12.5px">
+        删除选中${n?` (${n})`:""}
+      </button>
+    </div>`;
+}
+
+function openFileMgr(){
+  filePicked.clear();
+  const box = $("fileList");
+  box.classList.remove("hide");
+  $("btnFileMgr").setAttribute("aria-expanded","true");
+  renderFileList();
+}
+function closeFileMgr(){
+  $("fileList").classList.add("hide");
+  filePicked.clear();
+  $("btnFileMgr").setAttribute("aria-expanded","false");
+}
+
+// 真正调后端删除，成功后刷新列表；被删掉的若是当前选中文件则清空看板
+async function deleteResultFiles(names){
+  if(!names.length) return;
+  const cur = $("fileSel").value;
+  try{
+    const r = await api("/api/files/delete", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({files:names})
+    });
+    const n = (r.deleted || []).length;
+    const bad = (r.failed || []).length;
+    if(n){
+      ALL = [];                                   // 先清掉，避免残留旧数据
+      $("fileSel").value = "";
+      filePicked.clear();
+      await loadFiles();
+      if(cur && names.includes(cur)){
+        // 当前看的文件被删了 → 落到最新一份
+        const files = aiSrcFiles;
+        if(files.length){ $("fileSel").value = files[0].name; await loadFile(files[0].name); }
+        else { render(); }
+      }
+    }
+    const msg = n
+      ? `已删除 ${n} 个结果文件${bad?`，${bad} 个失败：${(r.failed||[])[0]}`:""}`
+      : `删除失败：${(r.failed||[])[0] || "未知原因"}`;
+    $("aiNote").textContent = msg;
+  }catch(e){
+    $("aiNote").textContent = "删除失败：" + e.message;
+  }
 }
 
 /* ---------- 拉取结果 ---------- */
@@ -2147,6 +2314,55 @@ $("btnToggleKey").addEventListener("click", ()=>{
 });
 $("fileSel").addEventListener("change", e=>{
   if(e.target.value){ loadFile(e.target.value); savePrefs(); }
+});
+
+/* 文件管理：打开/关闭、勾选、单个删除、批量删除 */
+$("btnFileMgr").addEventListener("click", e=>{
+  e.stopPropagation();
+  $("fileList").classList.contains("hide") ? openFileMgr() : closeFileMgr();
+});
+$("fileList").addEventListener("click", e=>{
+  // 单个删除
+  const del = e.target.closest("[data-del]");
+  if(del){
+    e.stopPropagation();
+    const name = del.dataset.del;
+    if(confirm(`确定删除 ${name} ？\n该操作不可撤销。`)) deleteResultFiles([name]);
+    return;
+  }
+  // 底部操作条
+  const act = e.target.closest("[data-act]");
+  if(act){
+    e.stopPropagation();
+    const a = act.dataset.act;
+    if(a === "sel-all"){ aiSrcFiles.forEach(f=>filePicked.add(f.name)); renderFileList(); }
+    else if(a === "sel-none"){ filePicked.clear(); renderFileList(); }
+    else if(a === "del-picked"){
+      const names = [...filePicked];
+      if(!names.length) return;
+      if(confirm(`确定删除选中的 ${names.length} 个结果文件？\n该操作不可撤销。`))
+        deleteResultFiles(names);
+    }
+    return;
+  }
+  // 勾选行（点删除按钮除外）
+  const row = e.target.closest(".file-row");
+  if(row){
+    const f = row.dataset.file;
+    filePicked.has(f) ? filePicked.delete(f) : filePicked.add(f);
+    renderFileList();
+  }
+});
+// 点面板外关闭文件管理。
+// 注意：每次勾选都会重建 fileList 的 DOM，冒泡到 document 时 e.target 已脱离
+// 文档，closest() 返回 null，会被误判成「点了外面」而把面板关掉。所以要用
+// isConnected 判断事件源是否还挂在文档上。
+document.addEventListener("click", e=>{
+  if($("fileList").classList.contains("hide")) return;
+  const t = e.target;
+  if(t && !t.isConnected) return;          // 内部重建导致的，不算「点外面」
+  if(t && t.isConnected && t.closest(".file-panel")) return;
+  closeFileMgr();
 });
 
 // 技能 chip 点击 → 反填到搜索框
