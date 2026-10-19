@@ -409,6 +409,110 @@
     .ms-menu{animation:none;transform:none}
     .dot.wait{animation:none;opacity:.7}
   }
+
+  /* ============================================================
+     进度条（替代原先把整屏日志摊开给用户看）
+     - 主体是可读的阶段文字 + 一条填充条，默认不展示原始日志
+     - 详细日志只在设置里开启 verbose_log 后才出现
+     ============================================================ */
+  .prog{margin-top:var(--sp-3)}
+  .prog-head{display:flex;align-items:baseline;gap:var(--sp-2);
+    justify-content:space-between;margin-bottom:6px;flex-wrap:wrap}
+  .prog-phase{font-size:13px;font-weight:600;color:var(--fg);
+    display:inline-flex;align-items:center;gap:6px}
+  .prog-count{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .prog-track{height:8px;border-radius:var(--radius-pill);
+    background:var(--line);overflow:hidden;position:relative;
+    box-shadow:inset 0 1px 2px rgba(30,58,138,.10)}
+  .prog-fill{height:100%;border-radius:var(--radius-pill);width:0;
+    background:linear-gradient(90deg,var(--primary),var(--accent2));
+    transition:width var(--dur-slow) var(--ease-out)}
+  /* 不确定进度（等登录、刚启动）：跑马灯，不假装知道百分比 */
+  .prog.indeterminate .prog-fill{width:35%;animation:prog-slide 1.5s var(--ease-out) infinite}
+  @keyframes prog-slide{
+    0%{transform:translateX(-100%)} 100%{transform:translateX(300%)}}
+  .prog.ok .prog-fill{background:linear-gradient(90deg,var(--ok),#22C55E)}
+  .prog.err .prog-fill{background:linear-gradient(90deg,var(--err),#F87171)}
+  .prog-note{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.6}
+  /* 详细日志：默认隐藏，开启设置后才渲染 */
+  .prog-detail{margin-top:var(--sp-2)}
+  .prog-detail summary{cursor:pointer;font-size:12px;color:var(--muted);
+    padding:4px 0;user-select:none;list-style:none;display:inline-flex;
+    align-items:center;gap:5px}
+  .prog-detail summary::-webkit-details-marker{display:none}
+  .prog-detail summary:hover{color:var(--fg)}
+  .prog-detail summary svg{transition:transform var(--dur) var(--ease-out)}
+  .prog-detail[open] summary svg{transform:rotate(90deg)}
+
+  /* ============================================================
+     设置面板（HIG §12：模态 = 半透明材料 + 遮罩，背景压暗后推）
+     ============================================================ */
+  .modal-mask{position:fixed;inset:0;z-index:100;
+    background:rgba(15,23,42,.42);
+    -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+    display:flex;align-items:center;justify-content:center;padding:var(--sp-4);
+    animation:fade-in var(--dur) var(--ease-out)}
+  @keyframes fade-in{from{opacity:0}to{opacity:1}}
+  .modal{width:100%;max-width:560px;max-height:88vh;overflow-y:auto;
+    background:var(--panel);border:1px solid var(--line);
+    border-radius:18px;box-shadow:var(--shadow-pop);
+    animation:modal-in var(--dur-slow) var(--ease-spring)}
+  @keyframes modal-in{from{opacity:0;transform:scale(.96) translateY(8px)}
+                      to{opacity:1;transform:scale(1) translateY(0)}}
+  .modal-head{display:flex;align-items:center;gap:var(--sp-2);
+    padding:var(--sp-4) var(--sp-4) var(--sp-3);
+    border-bottom:1px solid var(--line);position:sticky;top:0;
+    background:var(--panel);border-radius:18px 18px 0 0;z-index:1}
+  .modal-head h3{font-size:16px;font-weight:700;letter-spacing:-.01em;flex:1}
+  .modal-close{background:transparent;border:0;color:var(--muted);cursor:pointer;
+    width:32px;height:32px;border-radius:50%;display:flex;align-items:center;
+    justify-content:center;padding:0;min-height:32px;box-shadow:none}
+  .modal-close:hover{background:var(--panel2);color:var(--fg);filter:none}
+  .modal-body{padding:var(--sp-4)}
+  .modal-foot{display:flex;gap:var(--sp-2);justify-content:flex-end;
+    padding:var(--sp-3) var(--sp-4) var(--sp-4);position:sticky;bottom:0;
+    background:var(--panel);border-radius:0 0 18px 18px}
+
+  .set-group{margin-bottom:var(--sp-5)}
+  .set-group:last-child{margin-bottom:0}
+  .set-group > h4{font-size:11.5px;font-weight:700;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.08em;margin-bottom:var(--sp-3)}
+  .set-field{margin-bottom:var(--sp-3)}
+  .set-field label{display:block;font-size:12px;font-weight:600;
+    color:var(--muted);margin-bottom:6px}
+  .set-field input[type=text],.set-field input[type=password]{
+    width:100%;min-height:40px;font-family:inherit}
+  .set-field .hint{font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.5}
+  .set-key-row{display:flex;gap:var(--sp-2);align-items:stretch}
+  .set-key-row input{flex:1}
+  .set-key-row .ghost{white-space:nowrap;min-width:64px}
+  /* 开关：HIG §1 按下即反馈 */
+  .switch-row{display:flex;align-items:flex-start;gap:var(--sp-3);
+    padding:var(--sp-3);background:var(--panel2);border:1px solid var(--line);
+    border-radius:var(--radius-sm);cursor:pointer}
+  .switch-row:hover{border-color:var(--line-strong)}
+  .switch{flex:none;width:44px;height:26px;border-radius:var(--radius-pill);
+    background:var(--line-strong);position:relative;cursor:pointer;
+    transition:background var(--dur) var(--ease-out);border:0;padding:0}
+  .switch::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;
+    border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);
+    transition:transform var(--dur) var(--ease-spring)}
+  .switch[aria-checked="true"]{background:var(--ok)}
+  .switch[aria-checked="true"]::after{transform:translateX(18px)}
+  .switch-copy{flex:1;min-width:0}
+  .switch-copy b{display:block;font-size:13px;font-weight:600;margin-bottom:2px}
+  .switch-copy span{font-size:12px;color:var(--muted);line-height:1.5}
+  .set-status{font-size:12px;padding:var(--sp-2) var(--sp-3);border-radius:var(--radius-sm);
+    margin-top:var(--sp-3);display:flex;align-items:center;gap:6px}
+  .set-status.ok{background:color-mix(in srgb,var(--ok) 10%,transparent);
+    color:var(--ok);border:1px solid color-mix(in srgb,var(--ok) 35%,transparent)}
+  .set-status.warn{background:color-mix(in srgb,var(--warn) 10%,transparent);
+    color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 35%,transparent)}
+
+  /* 页头设置按钮 */
+  .btn-settings{display:inline-flex;align-items:center;gap:6px;
+    padding:8px 14px;font-size:13px;min-height:36px;box-shadow:var(--shadow-1)}
+  .btn-settings svg{width:14px;height:14px}
 </style>
 </head>
 <body>
@@ -423,7 +527,80 @@
     <span class="sub" style="display:inline-flex;align-items:center;font-weight:500">
       <span id="cdpDot" class="dot off"></span><span id="cdpTxt">检测中…</span>
     </span>
+    <button id="btnSettings" class="btn-settings" title="设置：AI 模型与密钥、详细日志"
+            aria-haspopup="dialog">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="8" cy="8" r="2.2"/>
+        <path d="M8 1.5v1.7M8 12.8v1.7M2.4 8h1.7M11.9 8h1.7M4.1 4.1l1.2 1.2M10.7 10.7l1.2 1.2M11.9 4.1l-1.2 1.2M5.3 10.7l-1.2 1.2"/>
+      </svg>
+      设置
+    </button>
   </header>
+
+  <!-- 设置面板：AI 配置 + 详细日志开关。默认关闭，不打扰首次使用者。 -->
+  <div id="settingsModal" class="modal-mask hide" role="dialog" aria-modal="true"
+       aria-labelledby="settingsTitle">
+    <div class="modal">
+      <div class="modal-head">
+        <h3 id="settingsTitle">设置</h3>
+        <button class="modal-close" id="btnCloseSettings" aria-label="关闭设置">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none"
+               stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="m4 4 8 8M12 4l-8 8"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <!-- AI 配置 -->
+        <div class="set-group">
+          <h4>AI 数据分析</h4>
+          <div class="set-field">
+            <label for="setBaseUrl">接口地址</label>
+            <input id="setBaseUrl" type="text" spellcheck="false"
+                   placeholder="https://你的中转站地址/v1">
+            <div class="hint">OpenAI 兼容接口，需包含 <code>/v1</code>。</div>
+          </div>
+          <div class="set-field">
+            <label for="setApiKey">API 密钥</label>
+            <div class="set-key-row">
+              <input id="setApiKey" type="password" spellcheck="false"
+                     placeholder="sk-..." autocomplete="off">
+              <button type="button" class="ghost" id="btnToggleKey">显示</button>
+            </div>
+            <div class="hint" id="keyHint">已配置的密钥会打码显示；留空表示不修改。</div>
+          </div>
+          <div class="set-field">
+            <label for="setModel">模型名</label>
+            <input id="setModel" type="text" spellcheck="false"
+                   placeholder="由你所用的中转站决定">
+          </div>
+          <div class="set-status hide" id="aiStatus"></div>
+        </div>
+
+        <!-- 日志 -->
+        <div class="set-group">
+          <h4>日志与排查</h4>
+          <div class="switch-row" id="verboseRow">
+            <button type="button" class="switch" id="swVerbose"
+                    role="switch" aria-checked="false"
+                    aria-labelledby="verboseLabel"></button>
+            <div class="switch-copy">
+              <b id="verboseLabel">显示详细日志</b>
+              <span>默认关闭，只显示进度条和阶段文字。排查抓取问题时再打开，
+                会额外显示原始命令行输出。</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-foot">
+        <button class="ghost" id="btnCancelSettings">取消</button>
+        <button id="btnSaveSettings">保存</button>
+      </div>
+    </div>
+  </div>
 
   <!-- CDP 状态栏：未就绪时给出一键启动入口 -->
   <div class="card" id="cdpCard">
@@ -437,7 +614,24 @@
       <button id="btnChrome" class="primary">启动 Chrome 并登录</button>
       <button id="btnStopChrome" class="ghost hide">关闭 Chrome</button>
     </div>
-    <pre id="cdpLog" class="hide"></pre>
+    <!-- Chrome 启动/登录进度：同样默认只看进度条，原始日志按设置开关决定 -->
+    <div class="prog hide" id="cdpProg">
+      <div class="prog-head">
+        <span class="prog-phase" id="cdpPhase">准备中…</span>
+        <span class="prog-count" id="cdpCount"></span>
+      </div>
+      <div class="prog-track"><i class="prog-fill" id="cdpFill"></i></div>
+      <div class="prog-note" id="cdpNote"></div>
+      <details class="prog-detail hide" id="cdpDetail">
+        <summary>
+          <svg viewBox="0 0 16 16" width="11" height="11" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round"
+               stroke-linejoin="round" aria-hidden="true"><path d="m6 3 5 5-5 5"/></svg>
+          查看详细日志
+        </summary>
+        <pre id="cdpLog"></pre>
+      </details>
+    </div>
   </div>
 
   <!-- 一键拉取 -->
@@ -471,9 +665,25 @@
         <label>或选择已有结果文件</label><select id="fileSel"></select>
       </div>
     </div>
-    <div id="logWrap" class="hide" style="margin-top:12px">
-      <h2 style="margin-bottom:8px">执行日志</h2>
-      <pre id="logBox"></pre>
+    <!-- 抓取进度：默认只给进度条 + 阶段文字；原始日志在设置里开启后才出现 -->
+    <div id="logWrap" class="hide">
+      <div class="prog" id="scrapeProg">
+        <div class="prog-head">
+          <span class="prog-phase" id="scrapePhase">准备中…</span>
+          <span class="prog-count" id="scrapeCount"></span>
+        </div>
+        <div class="prog-track"><i class="prog-fill" id="scrapeFill"></i></div>
+        <div class="prog-note" id="scrapeNote"></div>
+        <details class="prog-detail hide" id="scrapeDetail">
+          <summary>
+            <svg viewBox="0 0 16 16" width="11" height="11" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                 stroke-linejoin="round" aria-hidden="true"><path d="m6 3 5 5-5 5"/></svg>
+            查看详细日志
+          </summary>
+          <pre id="logBox"></pre>
+        </details>
+      </div>
     </div>
   </div>
 
@@ -662,6 +872,87 @@ function applyPrefs(){
   return data;
 }
 
+/* ---------- 设置面板 ---------- */
+// 让非技术用户能直接在页面里改模型/密钥，不必去翻 secrets.env。
+// 密钥永远不明文回显：后端只返回打码值，留空 = 不修改。
+let settingsData = null;
+
+async function loadSettings(){
+  try{
+    const s = await api("/api/settings");
+    settingsData = s;
+    $("setBaseUrl").value = s.ai_base_url || "";
+    $("setModel").value = s.ai_model || "";
+    $("setApiKey").value = "";
+    $("setApiKey").placeholder = s.ai_key_set
+      ? `已配置：${s.ai_key_masked}（留空则不修改）`
+      : "尚未配置，请填入密钥";
+    $("keyHint").textContent = s.ai_key_set
+      ? "已配置的密钥会打码显示；留空表示不修改，输入新值则覆盖。"
+      : "尚未配置。填入后点保存即可，无需重启服务。";
+
+    $("swVerbose").setAttribute("aria-checked", s.verbose_log ? "true" : "false");
+    setVerbose(s.verbose_log);
+
+    const st = $("aiStatus");
+    st.classList.remove("hide", "ok", "warn");
+    if(s.ai_ready){
+      st.classList.add("ok");
+      st.textContent = "AI 已就绪，可以直接使用数据分析。";
+    }else{
+      st.classList.add("warn");
+      st.textContent = "还缺：" + (s.missing || []).join("、") + "，AI 问答暂不可用。";
+    }
+    return s;
+  }catch(e){
+    console.warn("读取设置失败", e);
+    return null;
+  }
+}
+
+function openSettings(){
+  $("settingsModal").classList.remove("hide");
+  document.body.style.overflow = "hidden";   // 模态期间锁背景滚动
+  loadSettings();
+  setTimeout(()=>$("setBaseUrl").focus(), 60);
+}
+
+function closeSettings(){
+  $("settingsModal").classList.add("hide");
+  document.body.style.overflow = "";
+}
+
+async function saveSettings(){
+  const btn = $("btnSaveSettings");
+  btn.disabled = true; btn.textContent = "保存中…";
+  const patch = {
+    ai_base_url: $("setBaseUrl").value.trim(),
+    ai_model:    $("setModel").value.trim(),
+    verbose_log: $("swVerbose").getAttribute("aria-checked") === "true",
+  };
+  const key = $("setApiKey").value;
+  if(key) patch.ai_api_key = key;      // 只有填了才提交，避免误清空
+  try{
+    const s = await api("/api/settings", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(patch)
+    });
+    settingsData = s;
+    setVerbose(s.verbose_log);
+    btn.textContent = "已保存";
+    setTimeout(()=>{ btn.textContent = "保存"; btn.disabled = false; }, 900);
+    $("setApiKey").value = "";
+    await loadSettings();
+  }catch(e){
+    btn.textContent = "保存失败";
+    btn.disabled = false;
+    const st = $("aiStatus");
+    st.classList.remove("hide","ok");
+    st.classList.add("warn");
+    st.textContent = e.message;
+  }
+}
+
 /* ---------- 状态 ---------- */
 async function loadStatus(){
   try{
@@ -716,32 +1007,103 @@ async function loadStatus(){
   }
 }
 
+/* ---------- 进度条 ----------
+   默认只展示「阶段文字 + 进度条 + 一句话结果」，不把原始输出铺给人看。
+   只有设置里开了「显示详细日志」，才把 <details> 里的原始日志露出来。
+   依据 HIG §16 简洁（常用路径优先，高级信息收一层）。
+*/
+let VERBOSE = false;          // 由 /api/settings 同步
+const progTimers = {};        // 每个进度条对应一个轮询定时器
+
+function setVerbose(on){
+  VERBOSE = !!on;
+  ["cdpDetail","scrapeDetail"].forEach(id=>{
+    const el = $(id);
+    if(el) el.classList.toggle("hide", !VERBOSE);
+  });
+}
+
+// 渲染一个进度条：id 前缀 + 后端 progress 对象 + 状态
+function paintProgress(prefix, prog, status, extraNote){
+  const box  = $(prefix + "Prog");
+  const fill = $(prefix + "Fill");
+  const phaseEl = $(prefix + "Phase");
+  const countEl = $(prefix + "Count");
+  const noteEl  = $(prefix + "Note");
+  if(!box) return;
+
+  const p = prog || {};
+  const pct = Number(p.pct) || 0;
+  const indet = !!p.indeterminate && !pct;
+
+  box.classList.toggle("indeterminate", indet && status === "running");
+  box.classList.remove("ok","err");
+  if(status === "ok")   box.classList.add("ok");
+  if(status === "failed") box.classList.add("err");
+
+  phaseEl.textContent = p.phase || (status === "running" ? "处理中…" : "完成");
+  // 有条数目标时显示 x/y，否则显示阶段百分比
+  if(p.target){
+    countEl.textContent = `${p.jobs || 0} / ${p.target} 条`;
+  }else if(!indet && pct){
+    countEl.textContent = pct + "%";
+  }else{
+    countEl.textContent = "";
+  }
+  fill.style.width = indet ? "" : pct + "%";
+
+  if(noteEl){
+    let note = extraNote || "";
+    if(!note && status === "ok") note = "已完成";
+    if(!note && p.waiting) note = "页面正在翻页加载，属正常等待…";
+    noteEl.textContent = note;
+  }
+}
+
+function stopProgress(prefix){
+  if(progTimers[prefix]){ clearInterval(progTimers[prefix]); delete progTimers[prefix]; }
+}
+
 /* ---------- 启动 / 关闭 Chrome ---------- */
 async function runChromeAction(btn, path, label){
-  const logBox = $("cdpLog");
-  logBox.classList.remove("hide");
-  logBox.textContent = label + "…\n";
+  const detail = $("cdpDetail");
+  const raw = $("cdpLog");
+  $("cdpProg").classList.remove("hide");
+  paintProgress("cdp", {phase: label + "…", indeterminate: true}, "running");
+  $("cdpNote").textContent = "";
+  detail.classList.toggle("hide", !VERBOSE);
+  raw.textContent = "";
   btn.disabled = true;
+  stopProgress("cdp");
+
   try{
     const {job} = await api(path, {method:"POST"});
-    const timer = setInterval(async ()=>{
+    progTimers.cdp = setInterval(async ()=>{
       try{
         const st = await api("/api/scrape/log?job="+job);
-        logBox.textContent = st.log || (label + "…\n");
-        logBox.scrollTop = logBox.scrollHeight;
-        if(st.status!=="running" && st.status!=="pending"){
-          clearInterval(timer);
+        if(VERBOSE){
+          raw.textContent = st.log || "";
+          raw.scrollTop = raw.scrollHeight;
+        }
+        const done = st.status !== "running" && st.status !== "pending";
+        const note = done
+          ? (st.status === "ok" ? "操作完成" : "操作失败")
+          : "";
+        // Chrome 启动阶段后端拿不到页数，用不确定态表达「在跑」
+        paintProgress("cdp", st.progress || {phase: label + "…", indeterminate: true},
+                      st.status, note);
+        if(done){
+          stopProgress("cdp");
           btn.disabled = false;
-          logBox.textContent += "\n\n（任务结束：" + st.status + "）";
           await loadStatus();
         }
       }catch(e){
-        clearInterval(timer); btn.disabled=false;
-        logBox.textContent += "\n读取日志失败：" + e.message;
+        stopProgress("cdp"); btn.disabled=false;
+        paintProgress("cdp", {phase:"读取状态失败"}, "failed", e.message);
       }
     }, 1200);
   }catch(e){
-    logBox.textContent = "启动失败：" + e.message;
+    paintProgress("cdp", {phase:"启动失败"}, "failed", e.message);
     btn.disabled = false;
   }
 }
@@ -982,6 +1344,9 @@ async function scrape(){
   btn.disabled = true; btn.textContent = "拉取中…";
   $("logWrap").classList.remove("hide");
   $("logBox").textContent = "";
+  $("scrapeDetail").classList.toggle("hide", !VERBOSE);
+  paintProgress("scrape", {phase:"正在启动抓取…", indeterminate:true}, "running");
+  $("scrapeNote").textContent = "";
   try{
     const {job} = await api("/api/scrape", {
       method:"POST", headers:{"Content-Type":"application/json"},
@@ -995,23 +1360,33 @@ async function scrape(){
     poller = setInterval(async ()=>{
       try{
         const st = await api("/api/scrape/log?job="+job);
-        $("logBox").textContent = st.log || "（等待输出…）";
-        $("logBox").scrollTop = $("logBox").scrollHeight;
-        if(st.status!=="running" && st.status!=="pending"){
+        if(VERBOSE){
+          const lb = $("logBox");
+          lb.textContent = st.log || "";
+          lb.scrollTop = lb.scrollHeight;
+        }
+        const done = st.status !== "running" && st.status !== "pending";
+        let note = "";
+        if(done){
+          note = st.status === "ok"
+            ? (st.file ? "已加载本轮结果" : "抓取完成")
+            : "任务未成功，可在设置里开启详细日志查看原因";
+        }
+        paintProgress("scrape", st.progress, st.status, note);
+        if(done){
           clearInterval(poller); poller = null;
           btn.disabled = false; btn.textContent = "开始拉取";
           if(st.status==="ok" && st.file){
             $("fileSel").value = st.file;
             await loadFiles(); await loadFile(st.file);
-          }else{
-            $("logBox").textContent += "\n\n⚠ 任务未成功，请查看上方日志。";
           }
         }
       }catch(e){ clearInterval(poller); poller=null;
-        btn.disabled=false; btn.textContent="开始拉取"; }
+        btn.disabled=false; btn.textContent="开始拉取";
+        paintProgress("scrape", {phase:"读取状态失败"}, "failed", e.message); }
     }, 1200);
   }catch(e){
-    $("logBox").textContent = friendlyError(e.message);
+    paintProgress("scrape", {phase:"启动失败"}, "failed", friendlyError(e.message));
     btn.disabled = false; btn.textContent = "开始拉取";
     await loadStatus();
   }
@@ -1363,6 +1738,42 @@ $("btnChrome").addEventListener("click", ()=>
 $("btnStopChrome").addEventListener("click", ()=>
   runChromeAction($("btnStopChrome"), "/api/chrome/stop", "正在关闭专用 Chrome…"));
 $("btnRefresh").addEventListener("click", async ()=>{ await loadFiles(); render(); });
+
+/* ---------- 设置面板事件 ---------- */
+$("btnSettings").addEventListener("click", openSettings);
+$("btnCloseSettings").addEventListener("click", closeSettings);
+$("btnCancelSettings").addEventListener("click", closeSettings);
+$("btnSaveSettings").addEventListener("click", saveSettings);
+
+// 点遮罩空白处关闭（点内容区不关）
+$("settingsModal").addEventListener("click", e=>{
+  if(e.target === $("settingsModal")) closeSettings();
+});
+// Esc 关闭
+document.addEventListener("keydown", e=>{
+  if(e.key === "Escape" && !$("settingsModal").classList.contains("hide"))
+    closeSettings();
+});
+
+// 详细日志开关：HIG §1 按下即反馈，立刻翻转 aria-checked
+$("verboseRow").addEventListener("click", e=>{
+  e.preventDefault();
+  const sw = $("swVerbose");
+  const on = sw.getAttribute("aria-checked") === "true";
+  sw.setAttribute("aria-checked", on ? "false" : "true");
+  setVerbose(!on);          // 立即作用于当前页面，保存后持久化
+});
+$("verboseRow").addEventListener("keydown", e=>{
+  if(e.key === " " || e.key === "Enter"){ e.preventDefault(); $("verboseRow").click(); }
+});
+
+// 密钥显示/隐藏切换
+$("btnToggleKey").addEventListener("click", ()=>{
+  const inp = $("setApiKey");
+  const showing = inp.type === "text";
+  inp.type = showing ? "password" : "text";
+  $("btnToggleKey").textContent = showing ? "显示" : "隐藏";
+});
 $("fileSel").addEventListener("change", e=>{
   if(e.target.value){ loadFile(e.target.value); savePrefs(); }
 });
@@ -1378,6 +1789,7 @@ document.addEventListener("click", e=>{
   const prefs = applyPrefs();          // 先恢复上次的输入，再拉数据
   loadConvs();                        // 恢复 AI 会话
   refreshConvUI();
+  await loadSettings();                // 同步详细日志开关与 AI 配置状态
   await loadStatus();
   try{
     const files = await loadFiles();
