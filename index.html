@@ -560,6 +560,38 @@
   .src-head{font-size:11px;font-weight:700;color:var(--muted);
     text-transform:uppercase;letter-spacing:.06em;padding:4px 10px 6px}
   .src-empty{font-size:12px;color:var(--muted);padding:10px}
+  /* 多选复选框：历史数据可勾多份，合并后一起分析 */
+  .src-opt .cb{flex:none;width:16px;height:16px;border-radius:4px;
+    border:1.5px solid var(--line-strong);background:var(--panel2);
+    display:flex;align-items:center;justify-content:center;
+    transition:background var(--dur-fast) var(--ease-out),
+               border-color var(--dur-fast) var(--ease-out)}
+  .src-opt.on .cb{background:var(--primary);border-color:var(--primary)}
+  .src-opt .cb svg{width:11px;height:11px;color:#fff;opacity:0;
+    transition:opacity var(--dur-fast) var(--ease-out)}
+  .src-opt.on .cb svg{opacity:1}
+  .src-opt.on{background:color-mix(in srgb,var(--primary) 8%,transparent)}
+  /* 菜单底部操作栏：全选 / 清空 / 应用 */
+  .src-foot{display:flex;align-items:center;gap:var(--sp-2);
+    padding:8px 6px 2px;margin-top:6px;border-top:1px solid var(--line);
+    position:sticky;bottom:0;background:var(--panel)}
+  .src-foot .sum{flex:1;font-size:12px;color:var(--muted);
+    font-variant-numeric:tabular-nums;line-height:1.4}
+  .src-foot .sum b{color:var(--fg);font-weight:650}
+  .src-foot button{min-height:32px;padding:6px 12px;font-size:12.5px;
+    box-shadow:none}
+  .src-mini{background:transparent;border:1px solid var(--line);color:var(--muted);
+    border-radius:var(--radius-sm);font-family:inherit;font-size:11.5px;
+    padding:4px 9px;cursor:pointer;min-height:26px;
+    transition:all var(--dur-fast) var(--ease-out)}
+  .src-mini:hover{color:var(--fg);border-color:var(--line-strong);background:var(--panel2)}
+  .src-head-row{display:flex;align-items:center;gap:6px;
+    padding:4px 10px 6px}
+  .src-head-row .src-head{padding:0;flex:1}
+  /* 数据源按钮上的份数徽章 */
+  .src-count{flex:none;font-size:11px;font-weight:700;color:var(--on-primary);
+    background:var(--primary);border-radius:var(--radius-pill);
+    padding:1px 7px;line-height:1.6}
 </style>
 </head>
 <body>
@@ -799,6 +831,7 @@
         </svg>
         <span class="name" id="aiSrcName">当前筛选结果</span>
         <span class="tagline" id="aiSrcTag"></span>
+        <span class="src-count" id="aiSrcCount" style="display:none"></span>
         <svg class="caret" viewBox="0 0 16 16" width="12" height="12" fill="none"
              stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
              stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
@@ -1028,20 +1061,30 @@ async function saveSettings(){
    两件事分开：
    - 顶部「一键拉取」的文件选择 → 决定看板显示/筛选哪份数据
    - 这里的「数据源」       → 决定送什么数据给 AI 分析
-   默认跟随当前筛选；也可钉住某一份历史结果，方便回头对比不同批次。
+   默认跟随当前筛选；也可以勾选多份历史结果（合并去重）一起分析。
 */
-let AI_SRC = { mode: "current", file: "", jobs: [] };  // mode: current | history
-let aiSrcFiles = [];                                    // 历史文件列表缓存
+// mode: current | history
+// files: 勾选的历史文件名数组；jobs: 这些文件合并去重后的岗位
+let AI_SRC = { mode: "current", files: [], jobs: [] };
+let aiSrcFiles = [];              // 历史文件列表缓存
+let aiSrcDraft = new Set();       // 菜单里正在勾选的文件（点「应用」才生效）
+// 菜单里的草稿模式：点任一历史文件就自动从「跟随看板」切到「多选历史」，
+// 否则用户在 current 模式下勾选会看不到任何反馈。
+let aiSrcDraftMode = "current";
 
 function aiSrcLabel(){
   if(AI_SRC.mode === "current"){
     const n = currentFilter().length;
-    return { name: "当前筛选结果", tag: n ? `${n} 条` : "暂无数据" };
+    return { name: "当前筛选结果", tag: n ? `${n} 条` : "暂无数据", count: 0 };
   }
-  const f = aiSrcFiles.find(x => x.name === AI_SRC.file);
   const n = AI_SRC.jobs.length;
-  const desc = f ? [f.keyword, f.city].filter(Boolean).join(" · ") : "";
-  return { name: f ? f.name : AI_SRC.file, tag: desc || `${n} 条` };
+  const cnt = AI_SRC.files.length;
+  if(cnt === 1){
+    const f = aiSrcFiles.find(x => x.name === AI_SRC.files[0]);
+    const desc = f ? [f.keyword, f.city].filter(Boolean).join(" · ") : "";
+    return { name: f ? f.name : AI_SRC.files[0], tag: `${desc ? desc + " · " : ""}${n} 条`, count: 1 };
+  }
+  return { name: `${cnt} 份历史数据（已合并）`, tag: `${n} 条`, count: cnt };
 }
 
 // 本次提问实际要送给模型的岗位
@@ -1050,13 +1093,21 @@ function aiRows(){
 }
 
 function syncAiSrcBtn(){
-  const {name, tag} = aiSrcLabel();
+  const {name, tag, count} = aiSrcLabel();
   $("aiSrcName").textContent = name;
   $("aiSrcTag").textContent = tag ? `· ${tag}` : "";
+  // 多份时在按钮上挂个份数徽章，一眼看出是合并模式
+  const badge = $("aiSrcCount");
+  if(count > 1){ badge.textContent = count + " 份"; badge.style.display = ""; }
+  else badge.style.display = "none";
+
   const n = aiRows().length;
-  const scope = AI_SRC.mode === "current"
-    ? (n ? `（基于当前 ${n} 条筛选结果，全部发送）` : "")
-    : (n ? `（基于历史数据 ${n} 条，全部发送）` : "");
+  let scope = "";
+  if(AI_SRC.mode === "current"){
+    scope = n ? `（基于当前 ${n} 条筛选结果，全部发送）` : "";
+  }else{
+    scope = n ? `（基于 ${AI_SRC.files.length} 份历史数据合并去重后 ${n} 条，全部发送）` : "";
+  }
   $("aiScope").textContent = scope;
   $("btnAsk").disabled = aiBusy || n === 0;
 }
@@ -1074,42 +1125,66 @@ async function refreshAiSrcFiles(){
 function renderAiSrcMenu(){
   const box = $("aiSrcMenu");
   const curN = currentFilter().length;
-  const histRows = aiSrcFiles.map(f=>{
+  // 菜单内的选中态看草稿，不看已生效的 AI_SRC —— 用户勾选时必须有即时反馈
+  const isCurrent = aiSrcDraftMode === "current";
+
+  const fileRow = f=>{
     const desc = [f.keyword, f.city].filter(Boolean).join(" · ");
-    const active = AI_SRC.mode === "history" && AI_SRC.file === f.name;
-    return `<div class="src-opt ${active?"active":""}" role="option"
-        aria-selected="${active}" data-file="${esc(f.name)}">
+    const on = !isCurrent && aiSrcDraft.has(f.name);
+    return `<div class="src-opt ${on?"on":""}" role="option" aria-selected="${on}"
+        data-file="${esc(f.name)}">
+      <span class="cb"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+        stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"
+        aria-hidden="true"><path d="m3 8.5 3.2 3.2L13 5"/></svg></span>
       <div class="grow">
         <div class="t">${esc(f.name)}</div>
         <div class="s">${esc(desc)}${desc?" · ":""}${f.total||0} 条</div>
       </div>
       <span class="n">${f.total||0}</span>
-      ${active?`<svg class="check" viewBox="0 0 16 16" fill="none"
-        stroke="currentColor" stroke-width="2" stroke-linecap="round"
-        stroke-linejoin="round"><path d="m3 8.5 3.2 3.2L13 5"/></svg>`:""}
     </div>`;
-  }).join("");
+  };
+
+  const picked = isCurrent ? [] : aiSrcFiles.filter(f=>aiSrcDraft.has(f.name));
+  const rawSum = picked.reduce((s,f)=>s + (f.total||0), 0);
 
   box.innerHTML =
     `<div class="src-head">跟随看板</div>
-     <div class="src-opt ${AI_SRC.mode==="current"?"active":""}" role="option"
-          aria-selected="${AI_SRC.mode==="current"}" data-mode="current">
+     <div class="src-opt ${isCurrent?"active":""}" role="option"
+          aria-selected="${isCurrent}" data-mode="current">
        <div class="grow">
          <div class="t">当前筛选结果</div>
          <div class="s">跟随上方筛选条件实时变化</div>
        </div>
        <span class="n">${curN}</span>
-       ${AI_SRC.mode==="current"?`<svg class="check" viewBox="0 0 16 16" fill="none"
+       ${isCurrent?`<svg class="check" viewBox="0 0 16 16" fill="none"
          stroke="currentColor" stroke-width="2" stroke-linecap="round"
          stroke-linejoin="round"><path d="m3 8.5 3.2 3.2L13 5"/></svg>`:""}
      </div>
      <div class="src-sep"></div>
-     <div class="src-head">历史抓取结果</div>
-     ${histRows || '<div class="src-empty">还没有历史结果。先在上方拉取一次。</div>'}`;
+     <div class="src-head-row">
+       <span class="src-head">历史抓取结果${aiSrcFiles.length?`（可多选）`:""}</span>
+       ${aiSrcFiles.length?`<button class="src-mini" data-act="all">全选</button>
+         <button class="src-mini" data-act="none">清空</button>`:""}
+     </div>
+     ${aiSrcFiles.length ? aiSrcFiles.map(fileRow).join("")
+        : '<div class="src-empty">还没有历史结果。先在上方拉取一次。</div>'}
+     <div class="src-foot">
+       <span class="sum" id="aiSrcSum">${
+         isCurrent ? "当前模式：跟随筛选"
+         : picked.length ? `已选 <b>${picked.length}</b> 份 · 原始 <b>${rawSum}</b> 条，应用后自动去重`
+         : "未选择历史数据"
+       }</span>
+       <button class="ghost" data-act="cancel">取消</button>
+       <button class="primary" data-act="apply" ${
+         isCurrent || picked.length ? "" : "disabled"}>应用</button>
+     </div>`;
 }
 
 async function openAiSrcMenu(){
   await refreshAiSrcFiles();
+  // 打开时把当前生效的选择带进来
+  aiSrcDraftMode = AI_SRC.mode;
+  aiSrcDraft = new Set(AI_SRC.mode === "history" ? AI_SRC.files : []);
   renderAiSrcMenu();
   $("aiSrcMenuWrap").style.display = "";
   $("aiSrcPicker").setAttribute("aria-expanded", "true");
@@ -1120,23 +1195,52 @@ function closeAiSrcMenu(){
   $("aiSrcPicker").setAttribute("aria-expanded", "false");
 }
 
-async function pickAiSource(mode, file){
-  if(mode === "current"){
-    AI_SRC = { mode: "current", file: "", jobs: [] };
-  }else{
-    try{
-      const data = await api("/api/jobs?file=" + encodeURIComponent(file));
-      AI_SRC = { mode: "history", file, jobs: Array.isArray(data.jobs) ? data.jobs : [] };
-    }catch(e){
-      $("aiNote").textContent = "读取历史数据失败：" + e.message;
-      return;
+// 把若干份历史文件合并，按 job_id（无则 job_link/title）去重
+async function loadHistorySources(files){
+  const seen = new Set();
+  const merged = [];
+  for(const name of files){
+    const data = await api("/api/jobs?file=" + encodeURIComponent(name));
+    const list = Array.isArray(data.jobs) ? data.jobs : [];
+    for(const j of list){
+      const key = j.job_id || j.job_link || (j.title + "|" + j.boss_name);
+      if(seen.has(key)) continue;      // 同一岗位在多份结果里重复出现，只留一条
+      seen.add(key);
+      merged.push(j);
     }
+  }
+  return merged;
+}
+
+// 应用草稿里的勾选
+async function applyAiSources(){
+  const files = [...aiSrcDraft];
+  if(!files.length){
+    // 没勾任何历史 → 回到「跟随当前筛选」
+    AI_SRC = { mode: "current", files: [], jobs: [] };
+    closeAiSrcMenu();
+    syncAiSrcBtn();
+    addMsg("数据源已切换为：当前筛选结果", "bot");
+    return;
+  }
+  try{
+    const merged = await loadHistorySources(files);
+    AI_SRC = { mode: "history", files, jobs: merged };
+  }catch(e){
+    $("aiNote").textContent = "读取历史数据失败：" + e.message;
+    return;
   }
   closeAiSrcMenu();
   syncAiSrcBtn();
-  // 换了数据源就在聊天区留一条提示，避免用户以为还在分析上一批
   const {name, tag} = aiSrcLabel();
   addMsg(`数据源已切换为：${name}${tag?`（${tag}）`:""}`, "bot");
+}
+
+async function pickCurrentSource(){
+  AI_SRC = { mode: "current", files: [], jobs: [] };
+  closeAiSrcMenu();
+  syncAiSrcBtn();
+  addMsg("数据源已切换为：当前筛选结果", "bot");
 }
 
 $("aiSrcPicker").addEventListener("click", e=>{
@@ -1149,16 +1253,54 @@ $("btnAiSrcReload").addEventListener("click", async e=>{
   if($("aiSrcMenuWrap").style.display !== "none") renderAiSrcMenu();
   syncAiSrcBtn();
 });
+
+// 菜单内点击：勾选切换 / 全选清空 / 应用取消
 $("aiSrcMenu").addEventListener("click", e=>{
+  const act = e.target.closest("[data-act]");
+  if(act){
+    const a = act.dataset.act;
+    if(a === "all"){
+      aiSrcDraftMode = "history";
+      aiSrcFiles.forEach(f=>aiSrcDraft.add(f.name));
+      renderAiSrcMenu();
+    }else if(a === "none"){
+      aiSrcDraftMode = "history";
+      aiSrcDraft.clear();
+      renderAiSrcMenu();
+    }else if(a === "cancel"){
+      closeAiSrcMenu();
+    }else if(a === "apply"){
+      applyAiSources();
+    }
+    return;
+  }
   const opt = e.target.closest(".src-opt");
   if(!opt) return;
-  if(opt.dataset.mode === "current") pickAiSource("current");
-  else if(opt.dataset.file) pickAiSource("history", opt.dataset.file);
+  // 点「当前筛选结果」= 草稿切回跟随模式并清空勾选
+  if(opt.dataset.mode === "current"){
+    aiSrcDraftMode = "current";
+    aiSrcDraft.clear();
+    renderAiSrcMenu();
+    return;
+  }
+  const f = opt.dataset.file;
+  if(!f) return;
+  // 勾第一个历史文件时自动离开「跟随看板」，否则选中态永远不显示
+  aiSrcDraftMode = "history";
+  aiSrcDraft.has(f) ? aiSrcDraft.delete(f) : aiSrcDraft.add(f);
+  renderAiSrcMenu();
 });
 // 点其它地方关掉菜单
+// 注意：menu 内部每次勾选都会重建 DOM，冒泡到 document 时 e.target 已脱离
+// 文档，closest() 会返回 null。所以这里用「本次点击是否发生在菜单/按钮内部」
+// 的容错判断（isConnected），否则勾一下就自动关掉了。
 document.addEventListener("click", e=>{
   if($("aiSrcMenuWrap").style.display === "none") return;
-  if(e.target.closest("#aiSrcMenuWrap") || e.target.closest("#aiSrcPicker")) return;
+  const t = e.target;
+  if(t && t.isConnected &&
+     (t.closest("#aiSrcMenuWrap") || t.closest("#aiSrcPicker"))) return;
+  // 事件源已脱离 DOM（说明是菜单内部重建导致的），不当作「点外面」
+  if(t && !t.isConnected) return;
   closeAiSrcMenu();
 });
 
