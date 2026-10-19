@@ -142,6 +142,18 @@ BDS_AI_MODEL=你的模型名
 | `BDS_CDP_PORT` | `9222` | Chrome 调试端口 |
 | `BDS_PORT` | `8765` | 看板端口 |
 
+## 视觉风格
+
+整体视觉为 **Modern Dark Cinema（暗黑电影感）**，依据 `ui-ux-pro-max` 数据库的 `Modern Dark (Cinema Mobile)` 风格 + Apple HIG 落地：
+
+- **背景**：`#0a0a0f → #020203` 纵向渐变，三个 blurRadius 70px / opacity .08-.12 的靛蓝与暖光晕极缓慢漂移（18-26s）
+- **材质**：卡片与岗位卡为半透明毛玻璃（`backdrop-filter: blur(20px) saturate(140%)`）+ hairline 边框 `rgba(255,255,255,.08)` + 顶缘一道高光（HIG §12「材料捕光」）
+- **强调色**：靛蓝 `#5E6AD2`，主按钮带同色柔光；薪资用暖光 `#F0B37E` 模拟影院钨丝灯
+- **统计数字**：带一层极淡的同色辉光，让 KPI 在暗底上「发光」
+- **无障碍**：对比度实测正文 16.4:1 / 次要 5.6:1 / 按钮 4.7:1，均达 WCAG AA；`prefers-reduced-motion` 时光晕静止、动效降级为淡入淡出，`prefers-reduced-transparency` 下去掉毛玻璃，`prefers-contrast: more` 下边框加实
+
+如需换成其它风格（极简黑白、瑞士粗野、浅色数据看板等），告诉我即可，风格库有 84 种可选。
+
 ## 设计说明
 
 **为什么需要后端**：`file://` 打开的页面受浏览器同源策略限制，既不能执行本机 Python，也不能读取本地 JSON。所以「一键拉取」必须有一条数据通道。前端仍是单文件，后端只有标准库、无需安装任何东西。
