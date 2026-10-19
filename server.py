@@ -132,15 +132,67 @@ RESULT_DIR = os.environ.get("BDS_RESULT_DIR",
                             os.path.expanduser("~/.boss-zhipin-scraper/job-result"))
 CDP_PORT = int(os.environ.get("BDS_CDP_PORT", "9222"))
 
-# ---- AI 配置（OpenAI 兼容中转站）------------------------------------
-# 全部通过环境变量注入，仓库内不保存任何服务商地址、模型名或密钥。
-# 需要启用 AI 分析时，设置以下变量（或在 secrets.env 中配置）：
-#   BDS_AI_BASE_URL  中转站地址，OpenAI 兼容格式，例如 https://your-relay.example.com/v1
-#   BDS_AI_API_KEY   中转站密钥
-#   BDS_AI_MODEL     模型名，由你所用的中转站决定
-AI_BASE_URL = os.environ.get("BDS_AI_BASE_URL", "").strip()
-AI_API_KEY = os.environ.get("BDS_AI_API_KEY", "")
-AI_MODEL = os.environ.get("BDS_AI_MODEL", "").strip()
+# ---- AI 配置 ---------------------------------------------------------
+# 优先级：设置面板写入的 settings.json > 环境变量 > secrets.env（已并入环境）。
+# 这样非技术用户可以在页面里直接改模型和密钥，不必碰配置文件。
+SETTINGS_PATH = os.path.join(HERE, "settings.json")
+SETTINGS_LOCK = threading.Lock()
+
+# 保存在 settings.json 里的键（其余键忽略，防止被塞脏数据）
+SETTINGS_KEYS = ("ai_base_url", "ai_api_key", "ai_model", "verbose_log")
+_SECRET_KEYS = ("ai_api_key",)
+
+
+def load_settings():
+    """读设置文件；损坏或不存在时返回空 dict，绝不让看板起不来。"""
+    try:
+        with open(SETTINGS_PATH, encoding="utf-8") as f:
+            raw = json.load(f)
+        if not isinstance(raw, dict):
+            return {}
+        return {k: raw[k] for k in SETTINGS_KEYS if k in raw}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_settings(patch):
+    """合并写入设置文件；返回写入后的完整设置。"""
+    with SETTINGS_LOCK:
+        cur = load_settings()
+        cur.update({k: patch[k] for k in SETTINGS_KEYS if k in patch})
+        tmp = SETTINGS_PATH + ".tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(cur, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, SETTINGS_PATH)      # 原子替换，避免写一半损坏
+        except OSError as e:
+            raise RuntimeError(f"保存设置失败: {e}") from e
+        return cur
+
+
+_settings = load_settings()
+
+
+def cfg(key, env_name, default=""):
+    """运行期取配置：settings.json 优先，其次环境变量。"""
+    v = _settings.get(key)
+    if isinstance(v, str) and v.strip():
+        return v.strip()
+    return os.environ.get(env_name, default).strip()
+
+
+def reload_settings():
+    """保存后刷新内存副本 —— 不刷新则 cfg() 仍读旧值（页面保存后看不到变化）。"""
+    global _settings, VERBOSE_LOG
+    _settings = load_settings()
+    VERBOSE_LOG = str(_settings.get("verbose_log", False)).lower() in (
+        "1", "true", "yes")
+    return _settings
+
+
+AI_BASE_URL = cfg("ai_base_url", "BDS_AI_BASE_URL")
+AI_API_KEY = cfg("ai_api_key", "BDS_AI_API_KEY")
+AI_MODEL = cfg("ai_model", "BDS_AI_MODEL")
 AI_TIMEOUT = int(os.environ.get("BDS_AI_TIMEOUT", "90"))
 # 送进模型的岗位条数上限：0 表示不限制（全部发送）。
 # 默认 0——看板的数据量通常几百条，全量发送让分析更完整；
@@ -148,6 +200,10 @@ AI_TIMEOUT = int(os.environ.get("BDS_AI_TIMEOUT", "90"))
 AI_MAX_JOBS = int(os.environ.get("BDS_AI_MAX_JOBS", "0"))
 # 推理型模型会先花大量 token 思考，预算给足，否则 content 会是 null
 AI_MAX_TOKENS = int(os.environ.get("BDS_AI_MAX_TOKENS", "8000"))
+
+# 详细日志开关：默认关闭 —— 首次使用的人面对一屏 Python traceback 只会懵，
+# 默认只给进度条 + 一句话结果，需要排查时在设置里打开。
+VERBOSE_LOG = str(_settings.get("verbose_log", False)).lower() in ("1", "true", "yes")
 
 INDEX_HTML = os.path.join(HERE, "index.html")
 
@@ -316,20 +372,28 @@ def build_stats_block(jobs):
     return "\n".join(out)
 
 
+def ai_base():
+    return cfg("ai_base_url", "BDS_AI_BASE_URL")
+
+
+def ai_model():
+    return cfg("ai_model", "BDS_AI_MODEL")
+
+
 def ai_key():
-    """每次调用时读取，支持运行时设置环境变量后立即生效。"""
-    return os.environ.get("BDS_AI_API_KEY", "") or AI_API_KEY
+    """每次调用时读，改完设置立即生效，不必重启。"""
+    return cfg("ai_api_key", "BDS_AI_API_KEY")
 
 
 def ai_ready():
     """三项配置齐全才算可调用；缺哪项在报错里点名，避免 500 时无从下手。"""
     missing = []
-    if not AI_BASE_URL:
-        missing.append("BDS_AI_BASE_URL")
+    if not ai_base():
+        missing.append("接口地址")
     if not ai_key():
-        missing.append("BDS_AI_API_KEY")
-    if not AI_MODEL:
-        missing.append("BDS_AI_MODEL")
+        missing.append("API 密钥")
+    if not ai_model():
+        missing.append("模型名")
     return missing
 
 
@@ -369,14 +433,14 @@ def call_ai(question, jobs, model=None, history=None):
     msgs.append({"role": "user", "content": user})
 
     payload = json.dumps({
-        "model": model or AI_MODEL,
+        "model": model or ai_model(),
         "messages": msgs,
         "temperature": 0.3,
         "max_tokens": AI_MAX_TOKENS,
     }).encode("utf-8")
 
     req = urllib.request.Request(
-        AI_BASE_URL.rstrip("/") + "/chat/completions",
+        ai_base().rstrip("/") + "/chat/completions",
         data=payload,
         headers={"Authorization": f"Bearer {key}",
                  "Content-Type": "application/json"},
@@ -410,6 +474,83 @@ def call_ai(question, jobs, model=None, history=None):
     return text
 
 
+# ---- 进度解析 ---------------------------------------------------------
+# scraper 的 stdout 是给人看的流水账（每行一条岗位、夹着翻页等待）。
+# 前端要的是「到哪一步了、还剩多少」，所以在这里把它翻译成结构化进度。
+# 不解析成功也不算错：拿不到进度就继续只显示阶段文字，功能不受影响。
+RE_PAGE = re.compile(r"^-{3}\s*\[(\d+)/(\d+)\s*页,\s*(\d+)(?:/(\d+))?\s*条已抓\]")
+RE_JOB_LINE = re.compile(r"^\s*[✓√]\s")
+RE_PAGE_DONE = re.compile(r"本页\s*(\d+)\s*条")
+RE_TARGET_HIT = re.compile(r"已达目标\s*(\d+)\s*条")
+RE_TARGET_DONE = re.compile(r"目标\s*(\d+)\s*条\s*✅")
+RE_WAIT = re.compile(r"翻页等待\s*(\d+)\s*s")
+RE_LOGIN = re.compile(r"等待\s*BOSS\s*登录完成")
+RE_CDP_OK = re.compile(r"✅\s*已检测到\s*BOSS\s*登录态|✅\s*已登录")
+
+
+def parse_progress(line, cur):
+    """把一行输出并入进度状态（原地修改并返回 cur）。
+
+    字段：phase 阶段文字 / cur/总共 / pct 百分比 / jobs 已抓条数 / target 目标
+    """
+    text = line.rstrip("\r\n")
+    m = RE_PAGE.match(text)
+    if m:
+        page, pages, got = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        target = int(m.group(4)) if m.group(4) else 0
+        cur.update(phase=f"正在抓第 {page}/{pages} 页", cur=page, total=pages,
+                   jobs=got, target=target or cur.get("target", 0))
+        return cur
+    if RE_LOGIN.search(text):
+        cur.update(phase="等待登录完成", indeterminate=True)
+        return cur
+    if RE_CDP_OK.search(text):
+        cur.update(phase="已登录，开始抓取", indeterminate=True)
+        return cur
+    if RE_JOB_LINE.match(text):
+        cur["jobs"] = cur.get("jobs", 0) + 1
+        return cur
+    m = RE_TARGET_HIT.search(text)
+    if m:
+        cur.update(phase=f"已达目标 {m.group(1)} 条", pct_done=True)
+        return cur
+    m = RE_TARGET_DONE.search(text)
+    if m:
+        cur.update(phase=f"目标 {m.group(1)} 条已达成", pct_done=True)
+        return cur
+    m = RE_WAIT.search(text)
+    if m:
+        cur.update(phase=f"翻页等待 {m.group(1)} 秒", waiting=True)
+        return cur
+    if "=== BOSS直聘抓取 ===" in text:
+        cur.update(phase="准备抓取", indeterminate=True)
+    return cur
+
+
+def progress_view(cur):
+    """把内部进度转成前端直接可渲染的结构。"""
+    if not cur:
+        return {"phase": "", "pct": 0, "jobs": 0, "target": 0,
+                "indeterminate": True, "waiting": False}
+    target = cur.get("target") or 0
+    jobs = cur.get("jobs") or 0
+    pct = 0
+    if target:
+        pct = min(100, round(jobs / target * 100))
+    elif cur.get("total"):
+        pct = min(100, round((cur.get("cur") or 0) / cur["total"] * 100))
+    if cur.get("pct_done"):
+        pct = 100
+    return {
+        "phase": cur.get("phase", ""),
+        "pct": pct,
+        "jobs": jobs,
+        "target": target,
+        "indeterminate": bool(cur.get("indeterminate")) and not pct,
+        "waiting": bool(cur.get("waiting")),
+    }
+
+
 def run_command(job_id, cmd, cwd=REPO):
     """后台线程通用执行器：跑一条命令，边跑边把 stdout 写进 JOBS[job_id]['log']。"""
     def set_state(**kw):
@@ -417,6 +558,7 @@ def run_command(job_id, cmd, cwd=REPO):
             JOBS[job_id].update(kw)
 
     set_state(status="running", cmd=" ".join(cmd), started=time.time())
+    prog = {}
     try:
         env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
         proc = subprocess.Popen(
@@ -425,13 +567,21 @@ def run_command(job_id, cmd, cwd=REPO):
             text=True, encoding="utf-8", errors="replace",
         )
         for line in proc.stdout:
+            parse_progress(line, prog)
             with JOBS_LOCK:
                 JOBS[job_id]["log"] += line
+                JOBS[job_id]["progress"] = progress_view(prog)
         proc.wait()
+        vm = progress_view(prog)
+        if proc.returncode == 0:
+            vm.update(pct=100, indeterminate=False, phase=vm["phase"] or "完成")
         set_state(status="ok" if proc.returncode == 0 else "failed",
-                  returncode=proc.returncode)
+                  returncode=proc.returncode, progress=vm)
     except (OSError, ValueError) as e:
-        set_state(status="failed", log=JOBS[job_id].get("log", "") + f"\n启动失败: {e}")
+        set_state(status="failed",
+                  log=JOBS[job_id].get("log", "") + f"\n启动失败: {e}",
+                  progress={"phase": "启动失败", "pct": 0, "jobs": 0,
+                            "target": 0, "indeterminate": False, "waiting": False})
 
 
 def run_scrape(job_id, keyword, city, count, retries=3, detail=False, job_type=""):
@@ -482,6 +632,23 @@ class Handler(BaseHTTPRequestHandler):
                          "未找到 boss-zhipin-scraper（抓取功能依赖它）。"
                          f"请先安装：\n{install_hint()}\n"
                          "装好后重启本服务即可自动识别。")
+
+    def _settings_public(self):
+        """回给前端的设置：密钥只回「已配置/未配置」与打码值，绝不回明文。"""
+        key = ai_key()
+        masked = ""
+        if key:
+            masked = key[:4] + "•" * 8 + key[-4:] if len(key) > 10 else "•" * len(key)
+        return {
+            "ai_base_url": ai_base(),
+            "ai_model": ai_model(),
+            "ai_key_masked": masked,
+            "ai_key_set": bool(key),
+            "verbose_log": VERBOSE_LOG,
+            "ai_ready": not ai_ready(),
+            "missing": ai_ready(),
+            "settings_path": SETTINGS_PATH,
+        }
 
     def log_message(self, fmt, *args):
         pass  # 静默访问日志
@@ -537,7 +704,11 @@ class Handler(BaseHTTPRequestHandler):
                 "install_hint": install_hint(),
                 "result_dir": RESULT_DIR,
                 "result_dir_exists": os.path.isdir(RESULT_DIR),
+                "verbose_log": VERBOSE_LOG,
             })
+
+        if route == "/api/settings":
+            return self._send(200, self._settings_public())
 
         if route == "/api/files":
             try:
@@ -584,6 +755,43 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
 
+        # ---- 保存设置（AI 配置 + 详细日志开关）----
+        if parsed.path == "/api/settings":
+            global VERBOSE_LOG
+            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                payload = json.loads(self.rfile.read(length) or b"{}")
+            except (json.JSONDecodeError, ValueError):
+                return self._err(400, "请求体不是合法 JSON")
+            if not isinstance(payload, dict):
+                return self._err(400, "请求体不是对象")
+
+            patch = {}
+            for k in ("ai_base_url", "ai_model"):
+                if k in payload:
+                    patch[k] = str(payload[k]).strip()
+            # 密钥特殊处理：空字符串 = 不改动（避免用户只改模型时把密钥清空）
+            if payload.get("ai_api_key"):
+                patch["ai_api_key"] = str(payload["ai_api_key"]).strip()
+            if "ai_api_key" in payload and payload["ai_api_key"] == "":
+                patch["ai_api_key"] = ""      # 显式传空 = 清除
+            if "verbose_log" in payload:
+                patch["verbose_log"] = bool(payload["verbose_log"])
+
+            # 接口地址做个轻量校验，避免存进明显不对的值
+            url = patch.get("ai_base_url")
+            if url and not (url.startswith("http://") or url.startswith("https://")):
+                return self._err(400, "接口地址需以 http:// 或 https:// 开头")
+
+            try:
+                save_settings(patch)
+            except RuntimeError as e:
+                return self._err(500, str(e))
+
+            # 重新载入内存配置，让改动立即生效（不必重启服务）
+            reload_settings()
+            return self._send(200, self._settings_public())
+
         # ---- Chrome / 登录态管理 ----
         if parsed.path in ("/api/chrome/start", "/api/chrome/stop", "/api/chrome/check"):
             if not SCRAPER:
@@ -618,7 +826,7 @@ class Handler(BaseHTTPRequestHandler):
                                  history=payload.get("history"))
             except RuntimeError as e:
                 return self._err(502, str(e))
-            return self._send(200, {"answer": answer, "model": payload.get("model") or AI_MODEL})
+            return self._send(200, {"answer": answer, "model": payload.get("model") or ai_model()})
 
         if parsed.path != "/api/scrape":
             return self._err(404, "未知路由")
